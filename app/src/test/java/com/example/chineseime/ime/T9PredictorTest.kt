@@ -28,6 +28,24 @@ class T9PredictorTest {
     }
 
     @Test
+    fun keepsAllUsefulReadingsForAmbiguous2438() {
+        val predictor = T9Predictor(
+            FakeRepository(
+                mapOf(
+                    "bieu" to 5,
+                    "biet" to 4,
+                    "ciet" to 1
+                )
+            )
+        )
+
+        val predictions = predictor.predict("2438", 8)
+
+        assertEquals("bieu", predictions.first())
+        assertTrue("biet" in predictions)
+    }
+
+    @Test
     fun convertsToneLessVietnameseLettersToPhoneDigits() {
         assertEquals("864", T9Predictor.toDigits("toi"))
         assertEquals("938", T9Predictor.toDigits("yeu"))
