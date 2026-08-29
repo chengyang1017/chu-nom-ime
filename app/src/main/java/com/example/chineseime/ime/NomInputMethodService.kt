@@ -38,6 +38,9 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     private lateinit var input: InputConnectionController
     private lateinit var root: LinearLayout
     private lateinit var composition: TextView
+    private lateinit var t9Scroller: HorizontalScrollView
+    private lateinit var t9Candidates: LinearLayout
+    private lateinit var t9Strip: T9PredictionStrip
     private lateinit var candidateScroller: HorizontalScrollView
     private lateinit var candidates: LinearLayout
     private lateinit var candidateStrip: ImeCandidateStrip
@@ -45,6 +48,8 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     private var nomMode = true
     private var directInputMode = false
     private var t9Digits = ""
+    private var t9Predictions: List<String> = emptyList()
+    private var selectedT9PredictionIndex = -1
     @Volatile private var databaseReady = false
     private var sourceRows = 0
     private var searchRows = 0
@@ -93,6 +98,25 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         root.addView(composition, LinearLayout.LayoutParams(-1, dp(34)).apply {
             setMargins(dp(8), dp(2), dp(8), dp(4))
         })
+
+        t9Candidates = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), 0, dp(8), 0)
+            minimumHeight = dp(42)
+        }
+        t9Strip = T9PredictionStrip(
+            context = this,
+            host = t9Candidates,
+            onSelect = ::selectT9Prediction
+        )
+        t9Scroller = HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(t9Candidates)
+            visibility = View.GONE
+        }
+        root.addView(t9Scroller, LinearLayout.LayoutParams(-1, dp(44)))
 
         candidates = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -159,7 +183,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        keyboard.refreshCurrentMode()
+        keyboard.showMode(keyboard.currentMode)
         keyboard.setNomMode(nomMode)
         updateUi()
     }
@@ -253,6 +277,8 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
             if (t9Digits.isNotEmpty()) {
                 applyT9Prediction(keyPressedAt)
             } else {
+                t9Predictions = emptyList()
+                selectedT9PredictionIndex = -1
                 state.replaceCurrentToken("")
                 if (state.rawSentence.isEmpty()) {
                     input.finishComposing()
@@ -316,6 +342,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     override fun onMode(mode: KeyboardMode) {
         resetT9Prediction()
         keyboard.showMode(mode)
+        updateUi()
     }
 
     override fun onShift() {
@@ -324,11 +351,13 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
 
     private fun applyT9Prediction(keyPressedAt: Long = SystemClock.elapsedRealtimeNanos()) {
         if (t9Digits.isEmpty()) return
-        val prediction = if (databaseReady) {
-            t9Predictor.predict(t9Digits, 1).firstOrNull()
+        t9Predictions = if (databaseReady) {
+            t9Predictor.predict(t9Digits, T9_PREDICTION_LIMIT)
         } else {
-            null
+            emptyList()
         }
+        selectedT9PredictionIndex = if (t9Predictions.isEmpty()) -1 else 0
+        val prediction = t9Predictions.firstOrNull()
         state.replaceCurrentToken(prediction ?: t9Digits)
         showComposedImmediately()
         if (nomMode && databaseReady && prediction != null) {
@@ -338,8 +367,24 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         }
     }
 
+    private fun selectT9Prediction(index: Int) {
+        if (keyboard.currentMode != KeyboardMode.NINE_KEY || t9Digits.isEmpty()) return
+        val prediction = t9Predictions.getOrNull(index) ?: return
+        val keyPressedAt = SystemClock.elapsedRealtimeNanos()
+        selectedT9PredictionIndex = index
+        state.replaceCurrentToken(prediction)
+        showComposedImmediately()
+        if (nomMode && databaseReady) {
+            enqueueSentenceQuery(keyPressedAt)
+        } else {
+            cancelPendingQueries()
+        }
+    }
+
     private fun resetT9Prediction() {
         t9Digits = ""
+        t9Predictions = emptyList()
+        selectedT9PredictionIndex = -1
     }
 
     private fun enqueueSentenceQuery(keyPressedAt: Long = SystemClock.elapsedRealtimeNanos()) {
@@ -520,6 +565,17 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         if (composition.text.toString() != display) composition.text = display
         composition.visibility = if (display.isBlank()) View.GONE else View.VISIBLE
 
+        val t9SurfaceActive =
+            keyboard.currentMode == KeyboardMode.NINE_KEY &&
+                t9Digits.isNotEmpty() &&
+                t9Predictions.isNotEmpty()
+        t9Scroller.visibility = if (t9SurfaceActive) View.VISIBLE else View.GONE
+        if (t9SurfaceActive) {
+            t9Strip.render(t9Predictions, selectedT9PredictionIndex)
+        } else {
+            t9Strip.clear()
+        }
+
         val candidateSurfaceActive = nomMode && !directInputMode && state.rawSentence.isNotBlank()
         candidateScroller.visibility = if (candidateSurfaceActive) View.VISIBLE else View.GONE
 
@@ -554,6 +610,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         const val PREF_NOM_MODE = "nom_mode_enabled"
         const val QUERY_DEBOUNCE_MS = 20L
         const val MAX_CANDIDATES = 8
+        const val T9_PREDICTION_LIMIT = 8
         val PUNCTUATION = setOf(",", ".", "?", "!")
 
         private val BACKGROUND = Color.rgb(10, 13, 18)
