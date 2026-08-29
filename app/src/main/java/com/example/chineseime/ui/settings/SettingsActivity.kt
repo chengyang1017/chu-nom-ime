@@ -20,9 +20,11 @@ import com.example.chineseime.R
 import com.example.chineseime.data.local.NomCsvLoader
 import com.example.chineseime.data.model.NomSourceEntry
 import com.example.chineseime.ui.font.NomTypefaceProvider
+import com.example.chineseime.ui.curator.PhraseCuratorView
 import org.json.JSONObject
 
 class SettingsActivity : AppCompatActivity() {
+    private var phraseCurator: PhraseCuratorView? = null
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         title = getString(R.string.settings_title)
@@ -62,9 +64,13 @@ class SettingsActivity : AppCompatActivity() {
         addFontTests(box, provider)
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             box.addView(EditText(this).apply { hint = "Debug IME test field"; minLines = 2; inputType = android.text.InputType.TYPE_CLASS_TEXT })
+            box.addView(sectionTitle("Verified Nôm Phrase Curator"))
+            phraseCurator=PhraseCuratorView(this).also { it.attach(box) }
         }
         setContentView(ScrollView(this).apply { addView(box) })
     }
+
+    override fun onDestroy() { phraseCurator?.close();super.onDestroy() }
 
     private fun addFontTests(box: LinearLayout, provider: NomTypefaceProvider) {
         try {

@@ -2,6 +2,7 @@ package com.example.chineseime.data.repository
 
 import com.example.chineseime.data.local.NomDatabase
 import com.example.chineseime.data.model.NomSentenceCandidate
+import com.example.chineseime.data.model.VerifiedNomPhrase
 import com.example.chineseime.engine.VietnameseInput
 
 class SQLiteNomRepository(private val database: NomDatabase) : NomRepository {
@@ -18,4 +19,9 @@ class SQLiteNomRepository(private val database: NomDatabase) : NomRepository {
     override fun sentenceHistoryScore(rawSentence: String, sourceEntryIds: List<Long>) = database.sentenceHistoryScore(rawSentence, sourceEntryIds)
     override fun ngramScore(previousSourceEntryId: Long, currentSourceEntryId: Long) = database.ngramScore(previousSourceEntryId, currentSourceEntryId)
     override fun recordSelection(rawSentence: String, candidate: NomSentenceCandidate) = database.recordSelection(rawSentence, candidate)
+    override fun saveVerifiedPhrase(phrase: VerifiedNomPhrase) = database.saveVerifiedPhrase(phrase)
+    override fun findVerifiedExact(normalized: String, limit: Int) = database.findVerifiedExact(normalized, limit)
+    override fun findVerifiedWithoutTone(withoutTone: String, limit: Int) = database.findVerifiedWithoutTone(withoutTone, limit)
+    override fun listVerifiedPhrases(limit: Int) = database.listVerifiedPhrases(limit)
+    override fun deleteVerifiedPhrase(id: Long) = database.deleteVerifiedPhrase(id)
 }

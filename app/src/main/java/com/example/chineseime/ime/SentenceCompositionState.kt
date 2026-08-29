@@ -1,6 +1,7 @@
 ﻿package com.example.chineseime.ime
 
 import com.example.chineseime.data.model.NomSentenceCandidate
+import com.example.chineseime.data.model.NomSentenceCandidateOrigin
 import com.example.chineseime.engine.VietnameseInputParser
 
 class SentenceCompositionState(
@@ -49,6 +50,7 @@ class SentenceCompositionState(
     private fun composeRaw(): String = parser.parse(rawSentence).composed
 
     private fun composeUsingSegmentation(candidate: NomSentenceCandidate): String {
+        if (candidate.origin != NomSentenceCandidateOrigin.GENERATED) return composeRaw()
         if (candidate.segments.isEmpty()) return composeRaw()
         val segmented = candidate.segments.joinToString(" ") { segment ->
             parser.parse(segment.rawTokens.joinToString(" ")).composed

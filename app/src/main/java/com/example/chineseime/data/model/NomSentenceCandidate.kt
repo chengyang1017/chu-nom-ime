@@ -17,7 +17,10 @@ data class NomSentenceCandidate(
     val restoredVietnamese: String,
     val sourceEntryIds: List<Long>,
     val segments: List<NomSentenceSegment>,
-    val score: Double
+    val score: Double,
+    val origin: NomSentenceCandidateOrigin = NomSentenceCandidateOrigin.GENERATED
 ) {
     val unconvertedSegments: List<NomSentenceSegment> get() = segments.filterNot { it.isConverted }
 }
+
+enum class NomSentenceCandidateOrigin { GENERATED, VERIFIED_EXACT, VERIFIED_TONELESS }
