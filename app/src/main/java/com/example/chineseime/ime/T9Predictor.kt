@@ -9,7 +9,7 @@ enum class T9Tone(
     private val toneMark: Int?
 ) {
     AUTO("调", null),
-    NGANG("—", NO_TONE_MARK),
+    NGANG("—", -1),
     SAC("´", 0x0301),
     HUYEN("`", 0x0300),
     HOI("ˀ", 0x0309),
@@ -36,7 +36,6 @@ enum class T9Tone(
             return decomposed.codePoints()
                 .toArray()
                 .firstOrNull { it in VIETNAMESE_TONE_MARKS }
-                ?.takeIf { it in VIETNAMESE_TONE_MARKS }
         }
     }
 }
