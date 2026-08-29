@@ -1,7 +1,6 @@
 package com.example.chineseime.ime
 
 import android.graphics.Color
-import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
@@ -14,7 +13,6 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
-import android.widget.TextView
 import com.example.chineseime.data.local.NomDatabase
 import com.example.chineseime.data.repository.SQLiteNomRepository
 import com.example.chineseime.engine.sentence.LatestQueryCoordinator
@@ -37,7 +35,6 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     private lateinit var keyboard: KeyboardController
     private lateinit var input: InputConnectionController
     private lateinit var root: LinearLayout
-    private lateinit var composition: TextView
     private lateinit var t9Scroller: HorizontalScrollView
     private lateinit var t9Candidates: LinearLayout
     private lateinit var t9Strip: T9PredictionStrip
@@ -83,26 +80,13 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setBackgroundColor(BACKGROUND)
-            setPadding(0, dp(4), 0, 0)
+            setPadding(0, 0, 0, 0)
         }
-
-        composition = TextView(this).apply {
-            setTextColor(ACCENT)
-            textSize = 14f
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), 0, dp(12), 0)
-            maxLines = 1
-            background = roundedBackground(SURFACE, dp(14), BORDER)
-            visibility = View.GONE
-        }
-        root.addView(composition, LinearLayout.LayoutParams(-1, dp(34)).apply {
-            setMargins(dp(8), dp(2), dp(8), dp(4))
-        })
 
         t9Candidates = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), 0, dp(8), 0)
+            setPadding(dp(6), 0, dp(6), 0)
             minimumHeight = dp(42)
         }
         t9Strip = T9PredictionStrip(
@@ -121,13 +105,17 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         candidates = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(8), 0, dp(8), 0)
-            minimumHeight = dp(70)
+            setPadding(dp(4), 0, dp(4), 0)
+            minimumHeight = dp(56)
         }
         candidateStrip = ImeCandidateStrip(
             context = this,
             host = candidates,
             typeface = typefaceProvider.resolve("碎", 0).typeface,
+            showReading = {
+                getSharedPreferences(PREFS, MODE_PRIVATE)
+                    .getBoolean(PREF_SHOW_CANDIDATE_READING, false)
+            },
             onSelect = ::select
         )
         candidateScroller = HorizontalScrollView(this).apply {
@@ -136,7 +124,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
             addView(candidates)
             visibility = View.GONE
         }
-        root.addView(candidateScroller, LinearLayout.LayoutParams(-1, dp(74)))
+        root.addView(candidateScroller, LinearLayout.LayoutParams(-1, dp(58)))
         root.addView(keyboard.build())
 
         updateUi()
@@ -177,7 +165,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
             imeOptions = info?.imeOptions ?: EditorInfo.IME_ACTION_NONE,
             allowNineKey = !directInputMode
         )
-        if (::composition.isInitialized) updateUi()
+        if (::candidateStrip.isInitialized) updateUi()
         Log.i(TAG, "onStartInput mode=$mode nomMode=$nomMode directInput=$directInputMode")
     }
 
@@ -560,10 +548,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     }
 
     private fun updateUi() {
-        if (!::composition.isInitialized) return
-        val display = state.displaySentence
-        if (composition.text.toString() != display) composition.text = display
-        composition.visibility = View.GONE
+        if (!::candidateStrip.isInitialized) return
 
         val t9SurfaceActive =
             keyboard.currentMode == KeyboardMode.NINE_KEY &&
@@ -586,14 +571,6 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         }
     }
 
-    private fun roundedBackground(color: Int, radius: Int, stroke: Int): GradientDrawable =
-        GradientDrawable().apply {
-            shape = GradientDrawable.RECTANGLE
-            cornerRadius = radius.toFloat()
-            setColor(color)
-            setStroke(dp(1), stroke)
-        }
-
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun millis(nanos: Long) = nanos / 1_000_000.0
 
@@ -608,14 +585,12 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         const val PREFS = "nom_settings"
         const val PREF_SPACE_SELECT = "space_select_first"
         const val PREF_NOM_MODE = "nom_mode_enabled"
+        const val PREF_SHOW_CANDIDATE_READING = "show_quoc_ngu_under_nom_candidates"
         const val QUERY_DEBOUNCE_MS = 20L
         const val MAX_CANDIDATES = 8
         const val T9_PREDICTION_LIMIT = 8
         val PUNCTUATION = setOf(",", ".", "?", "!")
 
         private val BACKGROUND = Color.rgb(10, 13, 18)
-        private val SURFACE = Color.rgb(18, 24, 32)
-        private val BORDER = Color.rgb(38, 50, 65)
-        private val ACCENT = Color.rgb(111, 199, 255)
     }
 }
