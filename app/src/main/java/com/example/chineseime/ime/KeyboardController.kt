@@ -6,7 +6,7 @@ import android.graphics.Typeface
 import android.text.TextUtils
 import android.util.Log
 import android.view.Gravity
-import android.view.HapticFeedbackConstants
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.inputmethod.EditorInfo
@@ -288,12 +288,7 @@ class KeyboardController(
                 if (function) R.drawable.key_function_background else R.drawable.key_background
             )
             layoutParams = LayoutParams(width, keyHeight)
-            isClickable = true
-            isFocusable = true
-            setOnClickListener {
-                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                click()
-            }
+            installImmediatePress(click)
         }
 
         private fun iconKey(icon: Int, width: Int, click: () -> Unit) = ImageButton(context).apply {
@@ -303,10 +298,31 @@ class KeyboardController(
             contentDescription = null
             background = context.getDrawable(R.drawable.key_function_background)
             layoutParams = LayoutParams(width, keyHeight)
-            setOnClickListener {
-                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-                click()
+            installImmediatePress(click)
+        }
+
+        private fun View.installImmediatePress(click: () -> Unit) {
+            isClickable = true
+            isFocusable = true
+            setOnTouchListener { view, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> {
+                        view.isPressed = true
+                        click()
+                        true
+                    }
+
+                    MotionEvent.ACTION_UP,
+                    MotionEvent.ACTION_CANCEL -> {
+                        view.isPressed = false
+                        true
+                    }
+
+                    else -> true
+                }
             }
+            // Kept for keyboard/accessibility actions that invoke click without touch events.
+            setOnClickListener { click() }
         }
 
         private fun addGap(row: LinearLayout) = row.addView(Space(context), LayoutParams(horizontalGap, 1))
