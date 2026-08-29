@@ -29,4 +29,30 @@ class SentenceCompositionStateNineKeyTest {
         assertEquals("bans", state.rawSentence)
         assertEquals("bán", state.displaySentence)
     }
+
+    @Test
+    fun replaceCurrentTokenKeepsPreviousWords() {
+        val state = SentenceCompositionState()
+        state.append("xin")
+        state.appendSpace()
+        state.append("864")
+
+        state.replaceCurrentToken("toi")
+
+        assertEquals("xin toi", state.rawSentence)
+        assertEquals("xin toi", state.displaySentence)
+    }
+
+    @Test
+    fun replaceCurrentTokenCanRemoveActiveT9Word() {
+        val state = SentenceCompositionState()
+        state.append("xin")
+        state.appendSpace()
+        state.append("toi")
+
+        state.replaceCurrentToken("")
+
+        assertEquals("xin ", state.rawSentence)
+        assertEquals("xin ", state.displaySentence)
+    }
 }
