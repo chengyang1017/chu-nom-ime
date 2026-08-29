@@ -5,6 +5,7 @@ import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
 import android.util.Log
+import com.example.chineseime.data.corpus.VerifiedPhraseCorpusCodec
 import com.example.chineseime.data.model.NomCandidate
 import com.example.chineseime.data.model.NomSentenceCandidate
 import com.example.chineseime.data.model.VerifiedNomPhrase
@@ -65,6 +66,7 @@ class NomDatabase(private val context: Context, databaseName: String = DATABASE_
             check(after.first == expectedRows && after.second == expectedRows) {
                 "database count mismatch after import: source=${after.first} search=${after.second} expected=$expectedRows"
             }
+            importBundledVerifiedCorpusIfNeeded(db)
             val indexStarted = System.nanoTime()
             memoryIndex = buildMemoryIndex(db)
             loadLearningCaches(db)
@@ -198,6 +200,57 @@ class NomDatabase(private val context: Context, databaseName: String = DATABASE_
             throw error
         } finally {
             db.endTransaction()
+        }
+    }
+
+    private fun importBundledVerifiedCorpusIfNeeded(db: SQLiteDatabase) {
+        val corpusText=context.assets.open(VERIFIED_CORPUS_ASSET).bufferedReader(Charsets.UTF_8).use { it.readText() }
+        val corpus=VerifiedPhraseCorpusCodec.decode(corpusText)
+        val installedRevision=metadataValue(db,VERIFIED_CORPUS_REVISION_METADATA)?.toLongOrNull() ?: -1L
+        if(installedRevision>=corpus.revision) return
+        var imported=0
+        db.beginTransaction()
+        try {
+            corpus.phrases.forEach { corpusPhrase ->
+                val tokens=corpusPhrase.tokens.map { token ->
+                    VerifiedNomToken(
+                        inputToken=token.inputToken,
+                        sourceEntryId=resolveBundledSourceEntryId(db,token.sourceRow,token.readingRaw,token.nomRaw),
+                        readingRaw=token.readingRaw,
+                        nomRaw=token.nomRaw,
+                        exampleRaw=token.exampleRaw,
+                        noteRaw=token.noteRaw,
+                        sourceRow=token.sourceRow
+                    )
+                }
+                val phrase=VerifiedNomPhrase.create(corpusPhrase.phraseRaw,tokens)
+                val values=ContentValues().apply {
+                    put("phraseRaw",phrase.phraseRaw);put("phraseNormalized",phrase.phraseNormalized)
+                    put("phraseWithoutTone",phrase.phraseWithoutTone);put("phraseNormalizedCompact",phrase.phraseNormalizedCompact)
+                    put("phraseWithoutToneCompact",phrase.phraseWithoutToneCompact);put("nomText",phrase.nomText)
+                    put("sourceEntryIdsJson",JSONArray(phrase.sourceEntryIds).toString());put("tokensJson",tokensToJson(phrase.tokens))
+                    put("createdAt",phrase.createdAt);put("updatedAt",phrase.updatedAt)
+                }
+                if(db.insertWithOnConflict("verified_nom_phrases",null,values,SQLiteDatabase.CONFLICT_IGNORE)!=-1L) imported++
+            }
+            putMetadata(db,VERIFIED_CORPUS_REVISION_METADATA,corpus.revision.toString())
+            db.setTransactionSuccessful()
+        } finally {
+            db.endTransaction()
+        }
+        if(imported>0) verifiedRevision.incrementAndGet()
+        Log.i(TAG,"verified corpus revision=${corpus.revision} previous=$installedRevision imported=$imported")
+    }
+
+    private fun resolveBundledSourceEntryId(db: SQLiteDatabase, sourceRow: Int, readingRaw: String, nomRaw: String): Long {
+        return db.rawQuery(
+            "SELECT id FROM nom_source_entries WHERE sourceRow=? AND readingRaw=? AND nomRaw=? LIMIT 1",
+            arrayOf(sourceRow.toString(),readingRaw,nomRaw)
+        ).use { cursor ->
+            check(cursor.moveToFirst()) {
+                "Bundled verified token no longer matches dictionary sourceRow=$sourceRow readingRaw=$readingRaw nomRaw=$nomRaw"
+            }
+            cursor.getLong(0)
         }
     }
 
@@ -358,6 +411,8 @@ class NomDatabase(private val context: Context, databaseName: String = DATABASE_
         const val DATABASE_VERSION = 6
         const val CSV_ASSET = "hannom_rcv_standard_nom.csv"
         const val METADATA_ASSET = "hannom_rcv_metadata.json"
+        const val VERIFIED_CORPUS_ASSET = "verified_nom_phrases.json"
+        private const val VERIFIED_CORPUS_REVISION_METADATA = "verified_corpus_revision"
         private const val KEY_SEPARATOR = "\u0000"
         private val verifiedRevision = java.util.concurrent.atomic.AtomicLong(0)
     }

@@ -1,5 +1,8 @@
 package com.example.chineseime.ui.curator
 
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
 import android.graphics.Color
 import android.view.Gravity
 import android.widget.Button
@@ -8,6 +11,7 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import com.example.chineseime.data.corpus.VerifiedPhraseCorpusCodec
 import com.example.chineseime.data.local.NomDatabase
 import com.example.chineseime.data.model.NomCandidate
 import com.example.chineseime.data.model.VerifiedNomPhrase
@@ -40,6 +44,7 @@ class PhraseCuratorView(private val activity: AppCompatActivity) {
         parent.addView(status)
         parent.addView(candidateBox)
         parent.addView(TextView(activity).apply { text="Saved verified phrases"; textSize=16f; setPadding(0,24,0,8) })
+        parent.addView(Button(activity).apply { text="Copy corpus JSON"; setOnClickListener { copyCorpusJson() } })
         parent.addView(savedBox)
         status.text="Initializing phrase curator…"
         executor.execute {
@@ -107,6 +112,23 @@ class PhraseCuratorView(private val activity: AppCompatActivity) {
             val result=runCatching { repository.saveVerifiedPhrase(phrase) }
             activity.runOnUiThread { result.onSuccess { status.text="Saved verified phrase id=$it";refreshSaved() }
                 .onFailure { status.text="Save failed: ${it.message}" } }
+        }
+    }
+
+    private fun copyCorpusJson() {
+        status.text="Exporting verified corpus…"
+        executor.execute {
+            val result=runCatching {
+                val phrases=repository.listVerifiedPhrases(Int.MAX_VALUE)
+                phrases to VerifiedPhraseCorpusCodec.encode(phrases,System.currentTimeMillis())
+            }
+            activity.runOnUiThread {
+                result.onSuccess { (phrases,json) ->
+                    val clipboard=activity.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("verified_nom_phrases.json",json))
+                    status.text="Copied ${phrases.size} verified phrase(s) as corpus JSON"
+                }.onFailure { status.text="Export failed: ${it.message}" }
+            }
         }
     }
 
