@@ -12,6 +12,7 @@ class SQLiteNomRepository(private val database: NomDatabase) : NomRepository {
     override fun searchWithoutTonePrefix(withoutTonePrefix: String, limit: Int) = database.searchWithoutTonePrefix(withoutTonePrefix, limit)
     override fun searchTelexExact(telexKey: String, limit: Int) = database.searchTelexExact(telexKey, limit)
     override fun searchTelexPrefix(telexPrefix: String, limit: Int) = database.searchTelexPrefix(telexPrefix, limit)
+    override fun canExtend(input: VietnameseInput) = database.canExtend(input)
     override fun exactReadingEntryCount(reading: String) = database.exactReadingEntryCount(reading)
     override fun corpusFrequency(reading: String) = database.corpusFrequency(reading)
     override fun sentenceHistoryScore(rawSentence: String, sourceEntryIds: List<Long>) = database.sentenceHistoryScore(rawSentence, sourceEntryIds)

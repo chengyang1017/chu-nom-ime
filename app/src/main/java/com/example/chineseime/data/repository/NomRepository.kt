@@ -12,6 +12,7 @@ interface NomRepository {
     fun searchTelexExact(telexKey: String, limit: Int): List<NomCandidate> = emptyList()
     fun searchTelexPrefix(telexPrefix: String, limit: Int): List<NomCandidate> = emptyList()
     fun searchWithoutTonePrefix(withoutTonePrefix: String, limit: Int): List<NomCandidate> = emptyList()
+    fun canExtend(input: VietnameseInput): Boolean = true
     fun exactReadingEntryCount(reading: String): Int = 0
     fun corpusFrequency(reading: String): Int = 0
     fun sentenceHistoryScore(rawSentence: String, sourceEntryIds: List<Long>): Double = 0.0

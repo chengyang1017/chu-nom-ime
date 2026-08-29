@@ -23,7 +23,10 @@ class NomDatabase(private val context: Context) : SQLiteOpenHelper(context, DATA
 
     private val telex = TelexComposer()
     @Volatile private var initialized = false
+    @Volatile private var memoryIndex: NomMemoryIndex? = null
     private val corpusFrequencyCache = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val sentenceSelectionCache = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val ngramCache = java.util.concurrent.ConcurrentHashMap<Pair<Long, Long>, Int>()
 
     override fun onConfigure(db: SQLiteDatabase) {
         super.onConfigure(db)
@@ -59,8 +62,11 @@ class NomDatabase(private val context: Context) : SQLiteOpenHelper(context, DATA
             check(after.first == expectedRows && after.second == expectedRows) {
                 "database count mismatch after import: source=${after.first} search=${after.second} expected=$expectedRows"
             }
+            val indexStarted = System.nanoTime()
+            memoryIndex = buildMemoryIndex(db)
+            loadLearningCaches(db)
             initialized = true
-            Log.i(TAG, "database ready source=${after.first} search=${after.second} csvSha=$expectedSha")
+            Log.i(TAG, "database ready source=${after.first} search=${after.second} csvSha=$expectedSha memoryIndexMs=${(System.nanoTime()-indexStarted)/1_000_000.0}")
             return InitializationStatus(after.first, after.second, expectedSha, mustImport, failures)
         } catch (error: Throwable) {
             initialized = false
@@ -71,33 +77,21 @@ class NomDatabase(private val context: Context) : SQLiteOpenHelper(context, DATA
 
     fun search(input: VietnameseInput, limit: Int): List<NomCandidate> {
         check(initialized) { "Nom database queried before initialization completed" }
-        try {
-            val result = mutableListOf<NomCandidate>()
-            val sql = """SELECT s.id,s.sourceRow,s.readingRaw,s.nomRaw,s.exampleRaw,s.noteRaw
-                FROM nom_search_index i JOIN nom_source_entries s ON s.id=i.sourceEntryId
-                WHERE i.readingNormalized=? OR i.readingWithoutTone=? OR i.telexKey=?
-                ORDER BY s.sourceRow LIMIT ?""".trimIndent()
-            readableDatabase.rawQuery(sql, arrayOf(input.normalized, input.withoutTone, input.telexKey, limit.toString())).use { cursor ->
-                while (cursor.moveToNext()) result += NomCandidate(
-                    sourceEntryId = cursor.getLong(0), sourceRow = cursor.getInt(1),
-                    readingRaw = cursor.getString(2), nomRaw = cursor.getString(3),
-                    exampleRaw = cursor.getString(4), noteRaw = cursor.getString(5)
-                )
-            }
-            Log.d(TAG, "SQL query normalized=${input.normalized} withoutTone=${input.withoutTone} telex=${input.telexKey} resultCount=${result.size}")
-            return result
-        } catch (error: Throwable) {
-            Log.e(TAG, "SQL query failed for normalized=${input.normalized} telex=${input.telexKey}", error)
-            throw error
-        }
+        return requireNotNull(memoryIndex).search(input, limit)
     }
 
-    fun searchExactReading(normalized: String, limit: Int): List<NomCandidate> = searchColumn("i.readingNormalized = ?", normalized, limit, "exact")
-    fun searchWithoutTone(withoutTone: String, limit: Int): List<NomCandidate> = searchColumn("i.readingWithoutTone = ?", withoutTone, limit, "withoutTone")
-    fun searchReadingPrefix(normalizedPrefix: String, limit: Int): List<NomCandidate> = searchColumn("i.readingNormalized LIKE ? ESCAPE '\\'", escapeLike(normalizedPrefix) + "%", limit, "prefix")
-    fun searchWithoutTonePrefix(withoutTonePrefix: String, limit: Int): List<NomCandidate> = searchColumn("i.readingWithoutTone LIKE ? ESCAPE '\\'", escapeLike(withoutTonePrefix) + "%", limit, "withoutTonePrefix")
-    fun searchTelexExact(telexKey: String, limit: Int): List<NomCandidate> = searchColumn("i.telexKey = ?", telexKey, limit, "telexExact")
-    fun searchTelexPrefix(telexPrefix: String, limit: Int): List<NomCandidate> = searchColumn("i.telexKey LIKE ? ESCAPE '\\'", escapeLike(telexPrefix) + "%", limit, "telexPrefix")
+    fun searchExactReading(normalized: String, limit: Int): List<NomCandidate> = index().exactNormalized(normalized, limit)
+    fun searchWithoutTone(withoutTone: String, limit: Int): List<NomCandidate> = index().exactWithoutTone(withoutTone, limit)
+    fun searchReadingPrefix(normalizedPrefix: String, limit: Int): List<NomCandidate> = index().prefixNormalized(normalizedPrefix, limit)
+    fun searchWithoutTonePrefix(withoutTonePrefix: String, limit: Int): List<NomCandidate> = index().prefixWithoutTone(withoutTonePrefix, limit)
+    fun searchTelexExact(telexKey: String, limit: Int): List<NomCandidate> = index().exactTelex(telexKey, limit)
+    fun searchTelexPrefix(telexPrefix: String, limit: Int): List<NomCandidate> = index().prefixTelex(telexPrefix, limit)
+    fun canExtend(input: VietnameseInput): Boolean = index().canExtend(input)
+
+    private fun index(): NomMemoryIndex {
+        check(initialized) { "Nom database queried before initialization completed" }
+        return requireNotNull(memoryIndex)
+    }
 
     private fun searchColumn(where: String, argument: String, limit: Int, label: String): List<NomCandidate> {
         check(initialized) { "Nom database queried before initialization completed" }
@@ -113,6 +107,25 @@ class NomDatabase(private val context: Context) : SQLiteOpenHelper(context, DATA
     }
 
     private fun escapeLike(value: String): String = value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+    private fun buildMemoryIndex(db: SQLiteDatabase): NomMemoryIndex {
+        val values = ArrayList<NomMemoryIndex.IndexedNomCandidate>()
+        val sql = """SELECT s.id,s.sourceRow,s.readingRaw,s.nomRaw,s.exampleRaw,s.noteRaw,
+            i.readingNormalized,i.readingWithoutTone,i.telexKey
+            FROM nom_search_index i JOIN nom_source_entries s ON s.id=i.sourceEntryId
+            ORDER BY s.sourceRow""".trimIndent()
+        db.rawQuery(sql, null).use { cursor ->
+            while (cursor.moveToNext()) {
+                values += NomMemoryIndex.IndexedNomCandidate(
+                    candidate = NomCandidate(cursor.getLong(0),cursor.getInt(1),cursor.getString(2),cursor.getString(3),cursor.getString(4),cursor.getString(5)),
+                    readingNormalized = cursor.getString(6),
+                    readingWithoutTone = cursor.getString(7),
+                    telexKey = cursor.getString(8)
+                )
+            }
+        }
+        return NomMemoryIndex(values)
+    }
     private fun createSchema(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE IF NOT EXISTS nom_source_entries(id INTEGER PRIMARY KEY AUTOINCREMENT, sourceRow INTEGER NOT NULL, readingRaw TEXT NOT NULL, nomRaw TEXT NOT NULL, exampleRaw TEXT NOT NULL, noteRaw TEXT NOT NULL, sourceUrl TEXT NOT NULL)")
         db.execSQL("CREATE TABLE IF NOT EXISTS nom_search_index(id INTEGER PRIMARY KEY AUTOINCREMENT, sourceEntryId INTEGER NOT NULL, readingNormalized TEXT NOT NULL, readingWithoutTone TEXT NOT NULL, telexKey TEXT NOT NULL, FOREIGN KEY(sourceEntryId) REFERENCES nom_source_entries(id) ON DELETE CASCADE)")
@@ -169,23 +182,16 @@ class NomDatabase(private val context: Context) : SQLiteOpenHelper(context, DATA
     }
     fun corpusFrequency(reading: String): Int {
         check(initialized)
-        return corpusFrequencyCache.getOrPut(reading.lowercase()) {
-            readableDatabase.rawQuery("SELECT COUNT(*) FROM nom_source_entries WHERE lower(exampleRaw) LIKE ?", arrayOf("%${reading.lowercase()}%")).use { it.moveToFirst(); it.getInt(0) }
-        }
+        return corpusFrequencyCache.getOrPut(reading.lowercase()) { index().corpusFrequency(reading) }
     }
     fun sentenceHistoryScore(rawSentence: String, sourceEntryIds: List<Long>): Double {
         check(initialized)
-        val ids = sourceEntryIds.joinToString(",")
-        return readableDatabase.rawQuery("SELECT selectedCount FROM nom_user_selection WHERE rawSentence=? AND sourceEntryIds=?", arrayOf(rawSentence, ids)).use {
-            if (it.moveToFirst()) it.getInt(0) * 5.0 else 0.0
-        }
+        return (sentenceSelectionCache[selectionKey(rawSentence, sourceEntryIds)] ?: 0) * 5.0
     }
 
     fun ngramScore(previousSourceEntryId: Long, currentSourceEntryId: Long): Double {
         check(initialized)
-        return readableDatabase.rawQuery("SELECT count FROM nom_user_ngram WHERE previousSourceEntryId=? AND currentSourceEntryId=?", arrayOf(previousSourceEntryId.toString(), currentSourceEntryId.toString())).use {
-            if (it.moveToFirst()) kotlin.math.ln(1.0 + it.getInt(0)) else 0.0
-        }
+        return kotlin.math.ln(1.0 + (ngramCache[previousSourceEntryId to currentSourceEntryId] ?: 0))
     }
 
     fun recordSelection(rawSentence: String, candidate: NomSentenceCandidate) {
@@ -200,7 +206,23 @@ class NomDatabase(private val context: Context) : SQLiteOpenHelper(context, DATA
             }
             db.setTransactionSuccessful()
         } finally { db.endTransaction() }
+        sentenceSelectionCache.merge(selectionKey(rawSentence, candidate.sourceEntryIds), 1, Int::plus)
+        candidate.sourceEntryIds.zipWithNext().forEach { pair -> ngramCache.merge(pair, 1, Int::plus) }
     }
+
+    private fun loadLearningCaches(db: SQLiteDatabase) {
+        sentenceSelectionCache.clear()
+        ngramCache.clear()
+        db.rawQuery("SELECT rawSentence,sourceEntryIds,selectedCount FROM nom_user_selection", null).use { cursor ->
+            while (cursor.moveToNext()) sentenceSelectionCache[cursor.getString(0) + KEY_SEPARATOR + cursor.getString(1)] = cursor.getInt(2)
+        }
+        db.rawQuery("SELECT previousSourceEntryId,currentSourceEntryId,count FROM nom_user_ngram", null).use { cursor ->
+            while (cursor.moveToNext()) ngramCache[cursor.getLong(0) to cursor.getLong(1)] = cursor.getInt(2)
+        }
+    }
+
+    private fun selectionKey(rawSentence: String, sourceEntryIds: List<Long>) =
+        rawSentence + KEY_SEPARATOR + sourceEntryIds.joinToString(",")
     private fun counts(db: SQLiteDatabase): Pair<Int, Int> {
         fun count(table: String): Int = db.rawQuery("SELECT COUNT(*) FROM $table", null).use { cursor -> cursor.moveToFirst(); cursor.getInt(0) }
         return count("nom_source_entries") to count("nom_search_index")
@@ -219,5 +241,6 @@ class NomDatabase(private val context: Context) : SQLiteOpenHelper(context, DATA
         const val DATABASE_VERSION = 5
         const val CSV_ASSET = "hannom_rcv_standard_nom.csv"
         const val METADATA_ASSET = "hannom_rcv_metadata.json"
+        private const val KEY_SEPARATOR = "\u0000"
     }
 }
