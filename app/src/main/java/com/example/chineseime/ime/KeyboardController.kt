@@ -115,7 +115,7 @@ class KeyboardController(
         private val verticalGap = dp(5)
         private val keyHeight = dp(50)
         private val basePageHeight = dp(220)
-        private val nineKeyAccessoryHeight = dp(34)
+        private val nineKeyFilterWidth = dp(68)
         private val pageHost = FrameLayout(context)
         private var pagesCreated = false
         private var cachedMeasuredWidth = 0
@@ -123,6 +123,7 @@ class KeyboardController(
         private lateinit var nineKeyView: View
         private lateinit var numbersView: View
         private lateinit var symbolsView: View
+        private lateinit var nineKeySymbolHost: LinearLayout
         private lateinit var nineKeyAccessoryHost: FrameLayout
         private val letterKeys = mutableListOf<Pair<Char, AppCompatTextView>>()
         private val languageKeys = mutableListOf<AppCompatTextView>()
@@ -236,21 +237,10 @@ class KeyboardController(
         }
 
         fun updateNineKeyAccessoryVisibility() {
-            if (!pagesCreated || !::nineKeyAccessoryHost.isInitialized) return
-            val hasAccessory = nineKeyAccessory != null
-            val showAccessory = hasAccessory && nineKeyAccessoryVisible
+            if (!pagesCreated || !::nineKeyAccessoryHost.isInitialized || !::nineKeySymbolHost.isInitialized) return
+            val showAccessory = nineKeyAccessory != null && nineKeyAccessoryVisible
             nineKeyAccessoryHost.visibility = if (showAccessory) View.VISIBLE else View.GONE
-
-            val expanded = currentMode == KeyboardMode.NINE_KEY && showAccessory
-            val targetPageHeight = basePageHeight +
-                if (expanded) nineKeyAccessoryHeight + verticalGap else 0
-            val params = pageHost.layoutParams
-            if (params.height != targetPageHeight) {
-                params.height = targetPageHeight
-                pageHost.layoutParams = params
-            }
-            minimumHeight = targetPageHeight + paddingTop + paddingBottom
-            requestLayout()
+            nineKeySymbolHost.visibility = if (showAccessory) View.GONE else View.VISIBLE
         }
 
         fun resetNineKeyCycle() {
@@ -297,32 +287,89 @@ class KeyboardController(
 
         private fun buildNineKeyPage(unit: Int, available: Int): View {
             val page = page()
-            val keyWidth = ((available - horizontalGap * 2 - dp(28)) / 3f).roundToInt()
+            val mainHeight = keyHeight * 3 + verticalGap * 3
+            val gridAvailable = (available - nineKeyFilterWidth - horizontalGap).coerceAtLeast(dp(180))
+            val keyWidth = ((gridAvailable - horizontalGap * 2) / 3f).roundToInt()
+
+            val main = LinearLayout(context).apply {
+                orientation = HORIZONTAL
+                gravity = Gravity.TOP
+                layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, mainHeight)
+            }
+
+            val filterStack = FrameLayout(context).apply {
+                layoutParams = LinearLayout.LayoutParams(nineKeyFilterWidth, mainHeight)
+            }
+
+            nineKeySymbolHost = LinearLayout(context).apply {
+                orientation = VERTICAL
+                gravity = Gravity.TOP
+            }
+            val symbolHeight = ((mainHeight - verticalGap * 3) / 4f).roundToInt()
+            listOf(",", ".", "?", "!").forEachIndexed { index, symbol ->
+                val key = textKey(symbol, nineKeyFilterWidth, function = true) {
+                    resetNineKeyCycle()
+                    listener.onSymbol(symbol)
+                }
+                key.layoutParams = LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    symbolHeight
+                ).apply {
+                    if (index < 3) bottomMargin = verticalGap
+                }
+                nineKeySymbolHost.addView(key)
+            }
+
+            nineKeyAccessoryHost = FrameLayout(context).apply {
+                visibility = View.GONE
+            }
+
+            filterStack.addView(
+                nineKeySymbolHost,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
+            filterStack.addView(
+                nineKeyAccessoryHost,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
+            main.addView(filterStack)
+            main.addView(Space(context), LinearLayout.LayoutParams(horizontalGap, 1))
+
+            val grid = LinearLayout(context).apply {
+                orientation = VERTICAL
+                layoutParams = LinearLayout.LayoutParams(0, mainHeight, 1f)
+            }
             val rows = listOf(
                 listOf('1' to ".,?!", '2' to "ABC", '3' to "DEF"),
                 listOf('4' to "GHI", '5' to "JKL", '6' to "MNO"),
                 listOf('7' to "PQRS", '8' to "TUV", '9' to "WXYZ")
             )
             rows.forEach { groups ->
-                val content = keyWidth * 3 + horizontalGap * 2
-                val row = newRow(((available - content) / 2).coerceAtLeast(0))
+                val row = LinearLayout(context).apply {
+                    orientation = HORIZONTAL
+                    gravity = Gravity.CENTER_VERTICAL
+                    layoutParams = LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT,
+                        keyHeight
+                    ).apply {
+                        bottomMargin = verticalGap
+                    }
+                }
                 groups.forEachIndexed { index, (digit, letters) ->
                     if (index > 0) addGap(row)
                     row.addView(nineKeyButton(digit, letters, keyWidth))
                 }
-                page.addView(row)
+                grid.addView(row)
             }
+            main.addView(grid)
 
-            nineKeyAccessoryHost = FrameLayout(context).apply {
-                visibility = View.GONE
-            }
-            page.addView(
-                nineKeyAccessoryHost,
-                LayoutParams(LayoutParams.MATCH_PARENT, nineKeyAccessoryHeight).apply {
-                    bottomMargin = verticalGap
-                }
-            )
-
+            page.addView(main)
             page.addView(bottomRow(unit, available, KeyboardMode.NINE_KEY))
             return page
         }
