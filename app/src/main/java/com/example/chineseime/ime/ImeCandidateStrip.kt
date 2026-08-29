@@ -72,40 +72,84 @@ internal class ImeCandidateStrip(
     private fun createSlot(index: Int, typeface: Typeface): Slot {
         val nom = TextView(context).apply {
             this.typeface = typeface
-            textSize = 27f
+
+            // 喃字大小
+            textSize = 25f
+
             setTextColor(TEXT)
             gravity = Gravity.CENTER
             maxLines = 1
-            includeFontPadding = true
-            setPadding(0, dp(1), 0, dp(1))
+
+            // 保留字体自己的上下空间，避免喃字被裁切
+            includeFontPadding = false
+
+            // 字本身上下间距
+            setPadding(
+                0,      // 左
+                0,      // 上
+                0,      // 右
+                0       // 下
+            )
         }
+
         val reading = TextView(context).apply {
+            // 候选下面的 Quốc ngữ
             textSize = 10.5f
+
             setTextColor(MUTED)
             gravity = Gravity.CENTER
             maxLines = 1
             includeFontPadding = true
+
+            // 默认隐藏，由设置决定是否显示
             visibility = View.GONE
         }
+
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(6), 0, dp(6), 0)
-            minimumWidth = dp(54)
-            minimumHeight = dp(50)
+
+            // 整个候选格内部间距
+            setPadding(
+                dp(3),  // 左
+                0,      // 上
+                dp(3),  // 右
+                0       // 下
+            )
+
+            // 候选格最小尺寸
+            minimumWidth = dp(46)
+            minimumHeight = dp(40)
+
+            // 避免字体超出时被裁切
             clipChildren = false
             clipToPadding = false
+
+            // 第一候选稍微突出
             background = roundedBackground(
-                color = if (index == 0) SURFACE_HIGH else Color.TRANSPARENT,
-                stroke = if (index == 0) BORDER else Color.TRANSPARENT
+                color = if (index == 0) {
+                    SURFACE_HIGH
+                } else {
+                    Color.TRANSPARENT
+                },
+                stroke = if (index == 0) {
+                    BORDER
+                } else {
+                    Color.TRANSPARENT
+                }
             )
+
+            // 不要写固定高度
             layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                rightMargin = dp(1)
+                // 候选之间间距
+                rightMargin = 0
             }
+
             visibility = View.GONE
+
             addView(
                 nom,
                 LinearLayout.LayoutParams(
@@ -113,6 +157,7 @@ internal class ImeCandidateStrip(
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
             )
+
             addView(
                 reading,
                 LinearLayout.LayoutParams(
@@ -120,12 +165,20 @@ internal class ImeCandidateStrip(
                     ViewGroup.LayoutParams.WRAP_CONTENT
                 )
             )
+
             setOnClickListener {
-                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                performHapticFeedback(
+                    HapticFeedbackConstants.KEYBOARD_TAP
+                )
                 onSelect(index)
             }
         }
-        return Slot(root, nom, reading)
+
+        return Slot(
+            root = root,
+            nom = nom,
+            reading = reading
+        )
     }
 
     private fun roundedBackground(color: Int, stroke: Int): GradientDrawable =

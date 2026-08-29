@@ -106,7 +106,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(3), 0, dp(3), 0)
-            minimumHeight = dp(54)
+            minimumHeight = dp(48)
             clipChildren = false
             clipToPadding = false
         }
