@@ -378,7 +378,9 @@ class KeyboardController(
             setLineSpacing(0f, 0.92f)
             background = context.getDrawable(R.drawable.key_background)
             layoutParams = LayoutParams(width, keyHeight)
-            installImmediatePress { handleNineKeyPress(digit, letters) }
+            installImmediatePress(
+                click = { handleNineKeyPress(digit, letters) }
+            )
         }
 
         private fun handleNineKeyPress(digit: Char, group: String) {
