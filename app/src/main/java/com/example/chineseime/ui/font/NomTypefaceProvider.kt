@@ -3,6 +3,9 @@ package com.example.chineseime.ui.font
 import android.content.Context
 import android.graphics.Paint
 import android.graphics.Typeface
+import android.graphics.fonts.Font
+import android.graphics.fonts.FontFamily
+import android.os.Build
 import android.util.Log
 
 class NomTypefaceProvider private constructor(context: Context) {
@@ -65,11 +68,14 @@ class NomTypefaceProvider private constructor(context: Context) {
     private val loadedTypefaces: Map<String, Typeface?> = choices.associate { choice ->
         choice.id to loadTypeface(choice)
     }
+    private val compositeTypefaces = mutableMapOf<String, Typeface>()
 
     val status = LoadStatus(
         primaryLoaded = loadedTypefaces[FONT_MINH_NGUYEN] != null,
         fallbackLoaded = loadedTypefaces[FONT_PLANGOTHIC] != null,
-        customFallbackLoaded = false
+        customFallbackLoaded = Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q &&
+            loadedTypefaces[FONT_MINH_NGUYEN] != null &&
+            loadedTypefaces[FONT_PLANGOTHIC] != null
     )
 
     fun availableChoices(): List<FontChoice> = choices.filter { loadedTypefaces[it.id] != null }
@@ -89,22 +95,31 @@ class NomTypefaceProvider private constructor(context: Context) {
         return true
     }
 
-    fun typefaceFor(id: String): Typeface = loadedTypefaces[id] ?: systemTypeface
+    fun typefaceFor(id: String): Typeface {
+        val raw = loadedTypefaces[id] ?: return systemTypeface
+        if (id == FONT_PLANGOTHIC || Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) return raw
+        return synchronized(compositeTypefaces) {
+            compositeTypefaces[id] ?: buildCompositeTypeface(id)?.also {
+                compositeTypefaces[id] = it
+            } ?: raw
+        }
+    }
 
     fun currentTypeface(): Typeface = typefaceFor(currentChoice().id)
 
     fun resolve(nomText: String, sourceRow: Int): ResolvedTypeface {
         return try {
             val choice = currentChoice()
-            val selected = loadedTypefaces[choice.id]
+            val selectedRaw = loadedTypefaces[choice.id]
+            val selectedComposite = typefaceFor(choice.id)
             val plangothic = loadedTypefaces[FONT_PLANGOTHIC]
             val minh = loadedTypefaces[FONT_MINH_NGUYEN]
 
             val resolved = when {
-                selected != null && hasGlyph(selected, nomText) -> choice.label to selected
+                selectedRaw != null && hasGlyph(selectedRaw, nomText) -> choice.label to selectedComposite
                 plangothic != null && hasGlyph(plangothic, nomText) -> "Plangothic P1 fallback" to plangothic
                 minh != null && hasGlyph(minh, nomText) -> "Minh Nguyen fallback" to minh
-                selected != null -> choice.label to selected
+                selectedRaw != null -> choice.label to selectedComposite
                 else -> "System fallback" to systemTypeface
             }
 
@@ -140,6 +155,26 @@ class NomTypefaceProvider private constructor(context: Context) {
             Log.i(TAG, "Optional font not installed: ${choice.label}")
         }
         null
+    }
+
+    @androidx.annotation.RequiresApi(Build.VERSION_CODES.Q)
+    private fun buildCompositeTypeface(id: String): Typeface? {
+        val choice = choices.firstOrNull { it.id == id } ?: return null
+        if (loadedTypefaces[id] == null || loadedTypefaces[FONT_PLANGOTHIC] == null) return null
+        return try {
+            val selectedFont = Font.Builder(assets, choice.assetPath).build()
+            val fallbackFont = Font.Builder(assets, FALLBACK_PATH).build()
+            val selectedFamily = FontFamily.Builder(selectedFont).build()
+            val fallbackFamily = FontFamily.Builder(fallbackFont).build()
+            Typeface.CustomFallbackBuilder(selectedFamily)
+                .addCustomFallback(fallbackFamily)
+                .setSystemFallback("sans-serif")
+                .build()
+                .also { Log.i(TAG, "Built font chain ${choice.label} -> Plangothic P1 -> sans-serif") }
+        } catch (error: Throwable) {
+            Log.e(TAG, "Failed to build font chain for ${choice.label}", error)
+            null
+        }
     }
 
     private fun hasGlyph(typeface: Typeface, text: String): Boolean =
