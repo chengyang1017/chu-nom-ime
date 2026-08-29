@@ -19,12 +19,11 @@ import androidx.appcompat.app.AppCompatActivity
 import com.example.chineseime.R
 import com.example.chineseime.data.local.NomCsvLoader
 import com.example.chineseime.data.model.NomSourceEntry
+import com.example.chineseime.ui.curator.PhraseCuratorActivity
 import com.example.chineseime.ui.font.NomTypefaceProvider
-import com.example.chineseime.ui.curator.PhraseCuratorView
 import org.json.JSONObject
 
 class SettingsActivity : AppCompatActivity() {
-    private var phraseCurator: PhraseCuratorView? = null
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         title = getString(R.string.settings_title)
@@ -40,37 +39,40 @@ class SettingsActivity : AppCompatActivity() {
             isChecked = prefs.getBoolean("space_select_first", false)
             setOnCheckedChangeListener { _, checked -> prefs.edit().putBoolean("space_select_first", checked).apply() }
         })
-        box.addView(sectionTitle("Ngu\u1ed3n d\u1eef li\u1ec7u"))
+        box.addView(sectionTitle("Nguồn dữ liệu"))
         box.addView(TextView(this).apply {
             textSize = 15f
             text = buildString {
-                append("H\u1ed9i B\u1ea3o t\u1ed3n Di s\u1ea3n ch\u1eef N\u00f4m\n")
+                append("Hội Bảo tồn Di sản chữ Nôm\n")
                 append(metadata.getString("sourceUrl")); append("\n\n")
-                append("S\u1ed1 b\u1ea3n ghi: "); append(metadata.getInt("extractedRowCount")); append('\n')
-                append("Ng\u00e0y l\u1ea5y d\u1eef li\u1ec7u: "); append(metadata.getString("fetchedAt")); append('\n')
+                append("Số bản ghi: "); append(metadata.getInt("extractedRowCount")); append('\n')
+                append("Ngày lấy dữ liệu: "); append(metadata.getString("fetchedAt")); append('\n')
                 append("CSV SHA-256: "); append(metadata.getString("csvSha256"))
             }
             Linkify.addLinks(this, Linkify.WEB_URLS)
         })
-        box.addView(sectionTitle("Ph\u00f4ng ch\u1eef H\u00e1n N\u00f4m v\u00e0 gi\u1ea5y ph\u00e9p"))
+        box.addView(sectionTitle("Phông chữ Hán Nôm và giấy phép"))
         box.addView(TextView(this).apply {
             textSize = 14f
-            text = "Minh Nguy\u00ean Regular — TKYKmori / H\u1ed9i B\u1ea3o t\u1ed3n Di s\u1ea3n ch\u1eef N\u00f4m\n" +
+            text = "Minh Nguyên Regular — TKYKmori / Hội Bảo tồn Di sản chữ Nôm\n" +
                 "Plangothic P1 Regular — Plangothic Project V2.9.5795\n" +
-                "C\u1ea3 hai ph\u00f4ng ch\u1eef: SIL Open Font License 1.1\n" +
-                "B\u1ea3n quy\u1ec1n: assets/licenses/minh_nguyen_ofl.txt v\u00e0 assets/licenses/plangothic_ofl.txt"
+                "Cả hai phông chữ: SIL Open Font License 1.1\n" +
+                "Bản quyền: assets/licenses/minh_nguyen_ofl.txt và assets/licenses/plangothic_ofl.txt"
         })
-        box.addView(sectionTitle("Ki\u1ec3m tra hi\u1ec3n th\u1ecb ch\u1eef N\u00f4m"))
+        box.addView(sectionTitle("Kiểm tra hiển thị chữ Nôm"))
         addFontTests(box, provider)
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
             box.addView(EditText(this).apply { hint = "Debug IME test field"; minLines = 2; inputType = android.text.InputType.TYPE_CLASS_TEXT })
-            box.addView(sectionTitle("Verified Nôm Phrase Curator"))
-            phraseCurator=PhraseCuratorView(this).also { it.attach(box) }
+            box.addView(sectionTitle("Developer tools"))
+            box.addView(Button(this).apply {
+                text = "Open Verified Nôm Phrase Curator"
+                setOnClickListener {
+                    startActivity(Intent(this@SettingsActivity, PhraseCuratorActivity::class.java))
+                }
+            })
         }
         setContentView(ScrollView(this).apply { addView(box) })
     }
-
-    override fun onDestroy() { phraseCurator?.close();super.onDestroy() }
 
     private fun addFontTests(box: LinearLayout, provider: NomTypefaceProvider) {
         try {
