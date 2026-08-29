@@ -335,10 +335,23 @@ class KeyboardController(
             })
             addGap(row)
 
-            row.addView(textKey(".", widths[4]) {
-                resetNineKeyCycle()
-                listener.onSymbol(".")
-            })
+            if (mode == KeyboardMode.NINE_KEY) {
+                row.addView(
+                    iconKey(
+                        R.drawable.ic_backspace,
+                        widths[4],
+                        repeatOnHold = true
+                    ) {
+                        resetNineKeyCycle()
+                        listener.onDelete()
+                    }
+                )
+            } else {
+                row.addView(textKey(".", widths[4]) {
+                    resetNineKeyCycle()
+                    listener.onSymbol(".")
+                })
+            }
             addGap(row)
 
             val enter = iconKey(enterIcon(), widths[5]) {
@@ -498,7 +511,6 @@ class KeyboardController(
                     else -> true
                 }
             }
-            // Kept for keyboard/accessibility actions that invoke click without touch events.
             setOnClickListener { click() }
         }
 
