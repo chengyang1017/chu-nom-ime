@@ -58,6 +58,49 @@ class T9PredictorTest {
         assertTrue(predictor.predict("106").isEmpty())
     }
 
+    @Test
+    fun filtersRealVietnameseReadingsByTone() {
+        val predictor = T9Predictor(
+            ToneRepository(
+                mapOf(
+                    "ma" to listOf("ma", "má", "mà", "mả", "mã", "mạ")
+                )
+            )
+        )
+
+        assertEquals(listOf("ma"), predictor.predictWithTone("62", T9Tone.NGANG))
+        assertEquals(listOf("má"), predictor.predictWithTone("62", T9Tone.SAC))
+        assertEquals(listOf("mà"), predictor.predictWithTone("62", T9Tone.HUYEN))
+        assertEquals(listOf("mả"), predictor.predictWithTone("62", T9Tone.HOI))
+        assertEquals(listOf("mã"), predictor.predictWithTone("62", T9Tone.NGA))
+        assertEquals(listOf("mạ"), predictor.predictWithTone("62", T9Tone.NANG))
+    }
+
+    @Test
+    fun toneFilteringPreservesVietnameseVowelQuality() {
+        val predictor = T9Predictor(
+            ToneRepository(
+                mapOf(
+                    "toi" to listOf("tôi", "tối", "tồi", "tội")
+                )
+            )
+        )
+
+        assertEquals(listOf("tôi"), predictor.predictWithTone("864", T9Tone.NGANG))
+        assertEquals(listOf("tối"), predictor.predictWithTone("864", T9Tone.SAC))
+        assertEquals(listOf("tồi"), predictor.predictWithTone("864", T9Tone.HUYEN))
+        assertEquals(listOf("tội"), predictor.predictWithTone("864", T9Tone.NANG))
+    }
+
+    @Test
+    fun toneCycleReturnsToAutomaticMode() {
+        var tone = T9Tone.AUTO
+        repeat(T9Tone.entries.size) {
+            tone = tone.next()
+        }
+        assertEquals(T9Tone.AUTO, tone)
+    }
+
     private class FakeRepository(
         private val evidenceCounts: Map<String, Int>
     ) : NomRepository {
@@ -80,6 +123,39 @@ class T9PredictorTest {
             val count = (evidenceCounts[withoutTone] ?: 0).coerceAtMost(limit)
             return List(count) { index -> candidate(withoutTone, index + 1) }
         }
+
+        private fun candidate(reading: String, row: Int) = NomCandidate(
+            sourceEntryId = row.toLong(),
+            sourceRow = row,
+            readingRaw = reading,
+            nomRaw = "字$row",
+            exampleRaw = "",
+            noteRaw = ""
+        )
+    }
+
+    private class ToneRepository(
+        private val readings: Map<String, List<String>>
+    ) : NomRepository {
+        override fun search(input: VietnameseInput, limit: Int): List<NomCandidate> = emptyList()
+
+        override fun searchWithoutTonePrefix(
+            withoutTonePrefix: String,
+            limit: Int
+        ): List<NomCandidate> = readings.keys
+            .asSequence()
+            .filter { it.startsWith(withoutTonePrefix) }
+            .take(limit)
+            .mapIndexed { index, reading -> candidate(reading, index + 1) }
+            .toList()
+
+        override fun searchWithoutTone(
+            withoutTone: String,
+            limit: Int
+        ): List<NomCandidate> = readings[withoutTone]
+            .orEmpty()
+            .take(limit)
+            .mapIndexed { index, reading -> candidate(reading, index + 1) }
 
         private fun candidate(reading: String, row: Int) = NomCandidate(
             sourceEntryId = row.toLong(),
