@@ -1,21 +1,24 @@
 package com.example.chineseime.ui.curator
 
+import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
 import android.view.MenuItem
+import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.content.res.AppCompatResources
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.textfield.TextInputLayout
 
 class PhraseCuratorActivity : AppCompatActivity() {
     private var curatorView: PhraseCuratorView? = null
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
-
         window.statusBarColor = BACKGROUND
         window.navigationBarColor = BACKGROUND
 
@@ -26,9 +29,7 @@ class PhraseCuratorActivity : AppCompatActivity() {
 
         val toolbar = MaterialToolbar(this).apply {
             title = "Phrase Studio"
-            subtitle = "Verify Nôm readings with source evidence"
             setTitleTextColor(TEXT)
-            setSubtitleTextColor(MUTED)
             setBackgroundColor(BACKGROUND)
             navigationIcon = AppCompatResources.getDrawable(
                 this@PhraseCuratorActivity,
@@ -36,8 +37,8 @@ class PhraseCuratorActivity : AppCompatActivity() {
             )
             navigationIcon?.setTint(TEXT)
             setNavigationOnClickListener { finish() }
-            menu.add("Library").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
-            menu.add("Export").setShowAsAction(MenuItem.SHOW_AS_ACTION_IF_ROOM)
+            menu.add("Library").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
+            menu.add("Export").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
         }
         root.addView(toolbar, LinearLayout.LayoutParams(-1, -2))
 
@@ -64,6 +65,7 @@ class PhraseCuratorActivity : AppCompatActivity() {
         })
 
         curatorView = PhraseCuratorView(this).also { it.attach(content, bottomBar) }
+        normalizeTextFieldHints(content)
 
         toolbar.setOnMenuItemClickListener { item ->
             when (item.title?.toString()) {
@@ -80,6 +82,19 @@ class PhraseCuratorActivity : AppCompatActivity() {
         }
 
         setContentView(root)
+    }
+
+    private fun normalizeTextFieldHints(view: View) {
+        if (view is TextInputLayout && view.hint?.toString() == "Vietnamese phrase") {
+            // Keep one hint owner. Some OEM text renderers draw both the child hint and
+            // TextInputLayout's floating label at the same time, which causes overlap.
+            view.editText?.hint = null
+            view.placeholderText = "e.g. tôi yêu em"
+            view.setPlaceholderTextColor(ColorStateList.valueOf(MUTED))
+        }
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) normalizeTextFieldHints(view.getChildAt(index))
+        }
     }
 
     override fun onDestroy() {
