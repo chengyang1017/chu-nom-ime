@@ -37,6 +37,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     private lateinit var candidates: LinearLayout
     private lateinit var typefaceProvider: NomTypefaceProvider
     private var nomMode = true
+    private var directInputMode = false
     @Volatile private var databaseReady = false
     private var sourceRows = 0
     private var searchRows = 0
@@ -125,10 +126,15 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
             InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
             InputType.TYPE_TEXT_VARIATION_WEB_EMAIL_ADDRESS
         )
-        nomMode = !protected && mode == KeyboardMode.LETTERS
+        directInputMode = protected || mode != KeyboardMode.LETTERS
+        nomMode = if (directInputMode) {
+            false
+        } else {
+            getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PREF_NOM_MODE, true)
+        }
         keyboard.configure(mode, nomMode, info?.imeOptions ?: EditorInfo.IME_ACTION_NONE)
         if (::composition.isInitialized) updateUi()
-        Log.i(TAG, "onStartInput mode=$mode nomMode=$nomMode")
+        Log.i(TAG, "onStartInput mode=$mode nomMode=$nomMode directInput=$directInputMode")
     }
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
@@ -147,21 +153,26 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
 
     override fun onLetter(value: Char) {
         val keyPressedAt = SystemClock.elapsedRealtimeNanos()
-        Log.d(TAG, "key=$value mode=${keyboard.currentMode} rawSentence=${state.rawSentence}")
-        if (!nomMode) {
+        Log.d(TAG, "key=$value mode=${keyboard.currentMode} nomMode=$nomMode rawSentence=${state.rawSentence}")
+        if (directInputMode) {
             input.commit(value.toString())
             return
         }
         state.append(value.toString())
         showComposedImmediately()
-        enqueueSentenceQuery(keyPressedAt)
+        if (nomMode) enqueueSentenceQuery(keyPressedAt)
     }
 
     override fun onSpace() {
         val keyPressedAt = SystemClock.elapsedRealtimeNanos()
-        Log.d(TAG, "key=SPACE rawSentence=${state.rawSentence}")
-        if (!nomMode) {
+        Log.d(TAG, "key=SPACE nomMode=$nomMode rawSentence=${state.rawSentence}")
+        if (directInputMode) {
             input.commit(" ")
+            return
+        }
+        if (!nomMode) {
+            state.appendSpace()
+            showComposedImmediately()
             return
         }
         val chooseOnSpace = getSharedPreferences(PREFS, MODE_PRIVATE)
@@ -177,37 +188,41 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
 
     override fun onDelete() {
         val keyPressedAt = SystemClock.elapsedRealtimeNanos()
-        Log.d(TAG, "key=DELETE rawSentence=${state.rawSentence}")
+        Log.d(TAG, "key=DELETE nomMode=$nomMode rawSentence=${state.rawSentence}")
         if (state.rawSentence.isEmpty()) {
             input.delete()
             return
         }
         state.deleteCodePoint()
         if (state.rawSentence.isEmpty()) input.finishComposing() else showComposedImmediately()
-        enqueueSentenceQuery(keyPressedAt)
+        if (nomMode) enqueueSentenceQuery(keyPressedAt) else cancelPendingQueries()
     }
 
     override fun onSymbol(value: String) {
-        Log.d(TAG, "key=$value rawSentence=${state.rawSentence}")
-        if (nomMode && value in PUNCTUATION) {
-            commitSentenceOrFallback()
-            input.commit(value)
-        } else {
-            input.commit(value)
+        Log.d(TAG, "key=$value nomMode=$nomMode rawSentence=${state.rawSentence}")
+        if (!directInputMode && state.rawSentence.isNotBlank()) {
+            commitCurrentComposition()
         }
+        input.commit(value)
     }
 
     override fun onEnter() {
-        Log.d(TAG, "key=ENTER rawSentence=${state.rawSentence}")
-        commitSentenceOrFallback()
+        Log.d(TAG, "key=ENTER nomMode=$nomMode rawSentence=${state.rawSentence}")
+        commitCurrentComposition()
         input.enter(keyboard.enterAction)
     }
 
     override fun onLanguage() {
-        commitSentenceOrFallback()
+        if (directInputMode) return
+        commitCurrentComposition()
         nomMode = !nomMode
+        getSharedPreferences(PREFS, MODE_PRIVATE)
+            .edit()
+            .putBoolean(PREF_NOM_MODE, nomMode)
+            .apply()
         keyboard.setNomMode(nomMode)
         updateUi()
+        Log.i(TAG, "script mode changed to ${if (nomMode) "NOM" else "QUOC_NGU"}")
     }
 
     override fun onMode(mode: KeyboardMode) {
@@ -219,6 +234,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     }
 
     private fun enqueueSentenceQuery(keyPressedAt: Long = SystemClock.elapsedRealtimeNanos()) {
+        if (!nomMode || directInputMode) return
         val snapshot = state.rawSentence
         val generation = state.queryGeneration
         queryCoordinator.activate(generation)
@@ -261,7 +277,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
                     val backgroundFinished = SystemClock.elapsedRealtimeNanos()
                     mainHandler.post {
                         val applyStarted = SystemClock.elapsedRealtimeNanos()
-                        if (state.applyCandidates(generation, result)) {
+                        if (nomMode && !directInputMode && state.applyCandidates(generation, result)) {
                             lastError = ""
                             input.setComposing(state.displaySentence)
                             updateUi()
@@ -275,14 +291,14 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
                         } else {
                             Log.d(
                                 TAG,
-                                "stale sentence query ignored generation=$generation current=${state.queryGeneration}"
+                                "stale or inactive sentence query ignored generation=$generation current=${state.queryGeneration} nomMode=$nomMode"
                             )
                         }
                     }
                 } catch (error: Throwable) {
                     Log.e(TAG, "sentence query failed rawSentence=$snapshot", error)
                     mainHandler.post {
-                        if (generation == state.queryGeneration) {
+                        if (generation == state.queryGeneration && nomMode && !directInputMode) {
                             lastError = error.stackTraceToString()
                             updateUi()
                         }
@@ -295,6 +311,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     }
 
     private fun select(index: Int) {
+        if (!nomMode || directInputMode) return
         val raw = state.rawSentence.trim()
         val candidate = state.choose(index) ?: return
         Log.i(
@@ -315,8 +332,18 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         updateUi()
     }
 
-    private fun commitSentenceOrFallback() {
+    private fun commitCurrentComposition() {
         if (state.rawSentence.isBlank()) return
+
+        if (!nomMode || directInputMode) {
+            input.setComposing(state.displaySentence.ifBlank { state.rawSentence })
+            input.finishComposing()
+            state.reset()
+            cancelPendingQueries()
+            updateUi()
+            return
+        }
+
         val candidate = state.sentenceCandidates.firstOrNull()
         if (candidate != null) {
             val raw = state.rawSentence.trim()
@@ -343,7 +370,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         updateUi()
         Log.d(
             TAG,
-            "setComposingText rawSentence=${state.rawSentence} displaySentence=${state.displaySentence} restoredSentence=${state.restoredSentence}"
+            "setComposingText rawSentence=${state.rawSentence} displaySentence=${state.displaySentence} restoredSentence=${state.restoredSentence} nomMode=$nomMode"
         )
     }
 
@@ -360,7 +387,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
                         "device database initialized sourceRows=$sourceRows searchRows=$searchRows"
                     )
                     updateUi()
-                    if (state.rawSentence.isNotBlank()) enqueueSentenceQuery()
+                    if (nomMode && !directInputMode && state.rawSentence.isNotBlank()) enqueueSentenceQuery()
                 }
             } catch (error: Throwable) {
                 Log.e(TAG, "database initialization failed", error)
@@ -378,10 +405,12 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         composition.visibility = if (state.displaySentence.isBlank()) View.GONE else View.VISIBLE
 
         candidates.removeAllViews()
-        state.sentenceCandidates.forEachIndexed { index, candidate ->
-            candidates.addView(candidateCard(candidate, index))
+        if (nomMode && !directInputMode) {
+            state.sentenceCandidates.forEachIndexed { index, candidate ->
+                candidates.addView(candidateCard(candidate, index))
+            }
         }
-        candidateScroller.visibility = if (state.sentenceCandidates.isEmpty()) View.GONE else View.VISIBLE
+        candidateScroller.visibility = if (candidates.childCount == 0) View.GONE else View.VISIBLE
     }
 
     private fun candidateCard(candidate: NomSentenceCandidate, index: Int) = LinearLayout(this).apply {
@@ -444,6 +473,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         const val TAG = "NOM_IME"
         const val PREFS = "nom_settings"
         const val PREF_SPACE_SELECT = "space_select_first"
+        const val PREF_NOM_MODE = "nom_mode_enabled"
         const val QUERY_DEBOUNCE_MS = 12L
         val PUNCTUATION = setOf(",", ".", "?", "!")
 

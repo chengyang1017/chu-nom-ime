@@ -159,7 +159,7 @@ class KeyboardController(
                 key.text = (if (shifted) letter.uppercaseChar() else letter).toString()
             }
             languageKeys.forEach { key ->
-                key.text = if (nomMode) "NÔM" else "EN"
+                key.text = if (nomMode) "NÔM" else "QN"
                 key.setTextColor(if (nomMode) ACCENT else MUTED)
             }
             enterKeys.forEach { it.setImageResource(enterIcon()) }
