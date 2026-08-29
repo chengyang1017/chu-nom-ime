@@ -1,0 +1,9 @@
+<resources>
+ <string name="app_name">Bàn phím chữ Nôm</string>
+ <string name="ime_name">Chữ Nôm Việt Nam</string>
+ <string name="ime_subtype_name">Tiếng Việt (chữ Nôm)</string>
+ <string name="settings_title">Cài đặt bàn phím chữ Nôm</string>
+ <string name="settings_description">Bàn phím chữ Nôm hoạt động ngoại tuyến với dữ liệu từ Hội Bảo tồn Di sản chữ Nôm.</string>
+ <string name="enable_ime">Bật bàn phím</string>
+ <string name="choose_ime">Chọn bàn phím</string>
+</resources>

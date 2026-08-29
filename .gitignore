@@ -1,0 +1,25 @@
+# Android / Gradle
+*.iml
+.gradle/
+local.properties
+build/
+**/build/
+captures/
+.externalNativeBuild/
+.cxx/
+
+# Android Studio
+.idea/
+
+# macOS
+.DS_Store
+
+# Python cache
+**/__pycache__/
+*.py[cod]
+
+# Generated development artifacts
+tools/device_nom_dictionary.db
+tools/fonts/coverage_report.json
+tools/fonts/downloaded/
+tools/hannom_verified_page.html
