@@ -96,6 +96,8 @@ class NomDatabase(private val context: Context) : SQLiteOpenHelper(context, DATA
     fun searchWithoutTone(withoutTone: String, limit: Int): List<NomCandidate> = searchColumn("i.readingWithoutTone = ?", withoutTone, limit, "withoutTone")
     fun searchReadingPrefix(normalizedPrefix: String, limit: Int): List<NomCandidate> = searchColumn("i.readingNormalized LIKE ? ESCAPE '\\'", escapeLike(normalizedPrefix) + "%", limit, "prefix")
     fun searchWithoutTonePrefix(withoutTonePrefix: String, limit: Int): List<NomCandidate> = searchColumn("i.readingWithoutTone LIKE ? ESCAPE '\\'", escapeLike(withoutTonePrefix) + "%", limit, "withoutTonePrefix")
+    fun searchTelexExact(telexKey: String, limit: Int): List<NomCandidate> = searchColumn("i.telexKey = ?", telexKey, limit, "telexExact")
+    fun searchTelexPrefix(telexPrefix: String, limit: Int): List<NomCandidate> = searchColumn("i.telexKey LIKE ? ESCAPE '\\'", escapeLike(telexPrefix) + "%", limit, "telexPrefix")
 
     private fun searchColumn(where: String, argument: String, limit: Int, label: String): List<NomCandidate> {
         check(initialized) { "Nom database queried before initialization completed" }

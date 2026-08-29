@@ -21,6 +21,8 @@ class SentenceNomEngineTest {
         override fun searchWithoutTone(withoutTone: String, limit: Int)=values.filter { VietnameseInputParser.withoutTone(it.readingRaw)==withoutTone }.take(limit)
         override fun searchReadingPrefix(normalizedPrefix: String, limit: Int)=values.filter { VietnameseInputParser.normalize(it.readingRaw).startsWith(normalizedPrefix) }.take(limit)
         override fun searchWithoutTonePrefix(withoutTonePrefix: String, limit: Int)=values.filter { VietnameseInputParser.withoutTone(it.readingRaw).startsWith(withoutTonePrefix) }.take(limit)
+        override fun searchTelexExact(telexKey: String, limit: Int)=values.filter { TelexComposer().toTelex(it.readingRaw)==telexKey }.take(limit)
+        override fun searchTelexPrefix(telexPrefix: String, limit: Int)=values.filter { TelexComposer().toTelex(it.readingRaw).startsWith(telexPrefix) }.take(limit)
         override fun exactReadingEntryCount(reading: String)=values.count { it.readingRaw.equals(reading,true) }
         override fun corpusFrequency(reading: String)=values.count { it.exampleRaw.contains(reading,true) }
         override fun sentenceHistoryScore(rawSentence: String, sourceEntryIds: List<Long>) = (selected[rawSentence to sourceEntryIds]?:0)*5.0
@@ -43,7 +45,7 @@ class SentenceNomEngineTest {
     @Test fun requestedDynamicSentencesDoNotLoseTokens() {
         listOf("toi","nguoi viet nam","toi rat yeu tieng viet").forEach { raw ->
             val result=engine.query(raw,8); assertTrue(raw,result.isNotEmpty())
-            assertEquals(raw.split(' ').size,result.first().segments.sumOf { it.rawTokens.size })
+            assertEquals(raw.replace(" ", ""), result.first().segments.flatMap { it.rawTokens }.joinToString(""))
         }
     }
     @Test fun selectionHistoryRaisesChosenPath() {
@@ -61,6 +63,32 @@ class SentenceNomEngineTest {
         listOf("tôi yeu","toi yêu","tôi yêu em").forEach { raw ->
             val result=engine.query(raw,8); val typed=raw.split(' ')
             typed.forEachIndexed { index, token -> if(VietnameseInputParser.normalize(token)!=VietnameseInputParser.withoutTone(token)) assertEquals(VietnameseInputParser.normalize(token),VietnameseInputParser.normalize(result.first().segments[index].restoredVietnamese)) }
+        }
+    }
+    @Test fun continuousInputIsSegmentedFromDictionary() {
+        val result=engine.query("toiyeuem",8)
+        assertTrue(result.isNotEmpty())
+        assertTrue(result.joinToString("\n") { it.restoredVietnamese }, result.any { candidate ->
+            candidate.restoredVietnamese == "tôi yêu em" &&
+            candidate.segments.all { it.isConverted } &&
+                candidate.segments.joinToString("") { it.rawTokens.joinToString("") } == "toiyeuem" &&
+                candidate.segments.size >= 2
+        })
+    }
+    @Test fun continuousTelexIsComposedPerDictionarySegment() {
+        val result=engine.query("tooiyeeuem",8)
+        assertTrue(result.isNotEmpty())
+        assertTrue(result.joinToString("\n") { "${it.restoredVietnamese} <- ${it.segments.map { s -> s.rawTokens }}" }, result.any { candidate ->
+            candidate.restoredVietnamese == "tôi yêu em" &&
+                candidate.sourceEntryIds.size == candidate.segments.size &&
+                candidate.segments.joinToString("") { it.rawTokens.joinToString("") } == "tooiyeeuem"
+        })
+    }
+    @Test fun spacedAccentedAndSpacedTelexInputsRemainSupported() {
+        listOf("toi yeu em", "tôi yêu em", "tooi yeeu em").forEach { raw ->
+            val result = engine.query(raw, 8)
+            assertTrue(raw, result.isNotEmpty())
+            assertTrue(raw, result.any { it.restoredVietnamese == "tôi yêu em" })
         }
     }
 }

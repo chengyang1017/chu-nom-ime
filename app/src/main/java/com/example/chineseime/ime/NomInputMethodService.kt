@@ -94,7 +94,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     override fun onLetter(value: Char) {
         Log.d(TAG,"key=$value mode=${keyboard.currentMode} rawSentence=${state.rawSentence}")
         if(!nomMode){ input.commit(value.toString()); return }
-        state.append(value.toString()); showRawImmediately(); enqueueSentenceQuery()
+        state.append(value.toString()); showComposedImmediately(); enqueueSentenceQuery()
     }
 
     override fun onSpace() {
@@ -102,14 +102,14 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         if(!nomMode){ input.commit(" "); return }
         val chooseOnSpace=getSharedPreferences(PREFS,MODE_PRIVATE).getBoolean(PREF_SPACE_SELECT,false)
         if(chooseOnSpace && state.sentenceCandidates.isNotEmpty()) select(0) else {
-            state.appendSpace(); showRawImmediately(); enqueueSentenceQuery()
+            state.appendSpace(); showComposedImmediately(); enqueueSentenceQuery()
         }
     }
 
     override fun onDelete() {
         Log.d(TAG,"key=DELETE rawSentence=${state.rawSentence}")
         if(state.rawSentence.isEmpty()){ input.delete(); return }
-        state.deleteCodePoint(); if(state.rawSentence.isEmpty()) input.finishComposing() else showRawImmediately(); enqueueSentenceQuery()
+        state.deleteCodePoint(); if(state.rawSentence.isEmpty()) input.finishComposing() else showComposedImmediately(); enqueueSentenceQuery()
     }
 
     override fun onSymbol(value: String) {
@@ -137,6 +137,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
                     mainHandler.post {
                         if(state.applyCandidates(generation,result)) {
                             lastError=""
+                            input.setComposing(state.displaySentence)
                             updateUi()
                             val parsed=com.example.chineseime.engine.sentence.IncrementalSentenceInput.parse(snapshot)
                             Log.i(TAG,"sentence query applied generation=$generation rawSentence=$snapshot endsWithSpace=${parsed.endsWithSpace} completedTokens=${parsed.completedTokens} currentToken=${parsed.currentToken} restored=${result.firstOrNull()?.restoredVietnamese} candidateCount=${result.size} barVisible=${candidates.visibility==View.VISIBLE} candidates=${result.map { "${it.nomText}|${it.restoredVietnamese}|${it.sourceEntryIds}|unknown=${it.unconvertedSegments.map { segment -> segment.rawTokens }}" }}")
@@ -165,17 +166,21 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         if(candidate!=null){
             val raw=state.rawSentence.trim(); input.setComposing(candidate.nomText); input.finishComposing()
             executor.execute { try{engine.learn(raw,candidate)}catch(error:Throwable){Log.e(TAG,"fallback learning failed",error)} }
-        } else { input.setComposing(state.restoredSentence.ifBlank { state.rawSentence.trim() }); input.finishComposing() }
+        } else { input.setComposing(state.displaySentence.ifBlank { state.rawSentence.trim() }); input.finishComposing() }
         state.reset(); updateUi()
     }
 
-    private fun showRawImmediately(){ input.setComposing(state.rawSentence); updateUi(); Log.d(TAG,"setComposingText rawSentence=${state.rawSentence}") }
+    private fun showComposedImmediately(){
+        input.setComposing(state.displaySentence)
+        updateUi()
+        Log.d(TAG,"setComposingText rawSentence=${state.rawSentence} displaySentence=${state.displaySentence} restoredSentence=${state.restoredSentence}")
+    }
 
     private fun initializeDatabase(){ executor.execute { try { val status=database.initialize(); sourceRows=status.sourceRows; searchRows=status.searchRows; databaseReady=true; if(applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) { listOf("toi yeu em", "toi rat yeu tieng viet", "tôi yeu em", "toi yêu em", "tôi yêu em", "toi chatgpt yeu em").forEach { diagnosticRaw -> val diagnosticCandidates=engine.query(diagnosticRaw,8); Log.i(TAG,"sentence diagnostic rawSentence=$diagnosticRaw restored=${diagnosticCandidates.firstOrNull()?.restoredVietnamese} candidateCount=${diagnosticCandidates.size} candidates=${diagnosticCandidates.map { "${it.nomText}|${it.sourceEntryIds}|unknown=${it.unconvertedSegments.map { segment -> segment.rawTokens }}" }}") } }; mainHandler.post{Log.i(TAG,"device database initialized sourceRows=$sourceRows searchRows=$searchRows");updateUi();if(state.rawSentence.isNotBlank())enqueueSentenceQuery()} }catch(error:Throwable){Log.e(TAG,"database initialization failed",error);mainHandler.post{lastError=error.stackTraceToString();updateUi()}} } }
 
     private fun updateUi(){
         if(!::composition.isInitialized)return
-        composition.text=state.rawSentence
+        composition.text=state.displaySentence
         candidates.removeAllViews()
         state.sentenceCandidates.forEachIndexed{index,candidate->candidates.addView(candidateCard(candidate,index))}
         updateDiagnostics()
@@ -190,7 +195,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         setOnClickListener{select(index)}
     }
 
-    private fun updateDiagnostics(){if(::diagnostics.isInitialized)diagnostics.text="Source rows: $sourceRows\nSearch rows: $searchRows\nRaw sentence: ${state.rawSentence}\nRestored: ${state.restoredSentence}\nLast query: $lastQuery\nCandidates: ${state.sentenceCandidates.size}\nGeneration: ${state.queryGeneration}\nLast error: ${lastError.lineSequence().firstOrNull().orEmpty()}"}
+    private fun updateDiagnostics(){if(::diagnostics.isInitialized)diagnostics.text="Source rows: $sourceRows\nSearch rows: $searchRows\nRaw: ${state.rawSentence}\nDisplay: ${state.displaySentence}\nRestored: ${state.restoredSentence}\nLast query: $lastQuery\nCandidates: ${state.sentenceCandidates.size}\nGeneration: ${state.queryGeneration}\nLast error: ${lastError.lineSequence().firstOrNull().orEmpty()}"}
     private fun dp(v:Int)=(v*resources.displayMetrics.density).toInt()
     companion object{const val TAG="NOM_IME";const val PREFS="nom_settings";const val PREF_SPACE_SELECT="space_select_first";val PUNCTUATION=setOf(",",".","?","!")}
 }
