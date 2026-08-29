@@ -159,7 +159,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
 
     override fun onStartInputView(info: EditorInfo?, restarting: Boolean) {
         super.onStartInputView(info, restarting)
-        keyboard.showMode(keyboard.currentMode)
+        keyboard.refreshCurrentMode()
         keyboard.setNomMode(nomMode)
         updateUi()
     }
