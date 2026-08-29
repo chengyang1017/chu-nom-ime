@@ -28,6 +28,7 @@ class KeyboardController(
 ) {
     interface Listener {
         fun onLetter(value: Char)
+        fun onNineKeyDigit(value: Char)
         fun onReplaceLastLetter(value: Char)
         fun onReplaceCommittedSymbol(value: String)
         fun onDelete()
@@ -55,8 +56,13 @@ class KeyboardController(
 
     fun build(): View = panel ?: KeyboardPanel(context).also { panel = it }
 
-    fun configure(mode: KeyboardMode, isNomMode: Boolean, imeOptions: Int) {
-        currentMode = if (mode == KeyboardMode.LETTERS) preferredTextMode else mode
+    fun configure(
+        mode: KeyboardMode,
+        isNomMode: Boolean,
+        imeOptions: Int,
+        allowNineKey: Boolean = true
+    ) {
+        currentMode = if (mode == KeyboardMode.LETTERS && allowNineKey) preferredTextMode else mode
         nomMode = isNomMode
         enterAction = imeOptions
         panel?.updateDynamicKeys()
@@ -384,6 +390,12 @@ class KeyboardController(
         }
 
         private fun handleNineKeyPress(digit: Char, group: String) {
+            if (digit != '1') {
+                resetNineKeyCycle()
+                listener.onNineKeyDigit(digit)
+                return
+            }
+
             val now = SystemClock.uptimeMillis()
             val cycling =
                 lastNineKeyDigit == digit &&
@@ -394,21 +406,11 @@ class KeyboardController(
             lastNineKeyIndex = index
             lastNineKeyAt = now
 
-            val selected = group[index]
-            if (digit == '1') {
-                if (cycling) {
-                    listener.onReplaceCommittedSymbol(selected.toString())
-                } else {
-                    listener.onSymbol(selected.toString())
-                }
-                return
-            }
-
-            val letter = if (shifted) selected.uppercaseChar() else selected.lowercaseChar()
+            val selected = group[index].toString()
             if (cycling) {
-                listener.onReplaceLastLetter(letter)
+                listener.onReplaceCommittedSymbol(selected)
             } else {
-                listener.onLetter(letter)
+                listener.onSymbol(selected)
             }
         }
 
