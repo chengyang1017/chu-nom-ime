@@ -18,6 +18,7 @@ import androidx.appcompat.app.AppCompatActivity
 import com.example.chineseime.R
 import com.example.chineseime.data.local.NomCsvLoader
 import com.example.chineseime.data.model.NomSourceEntry
+import com.example.chineseime.ime.NomInputMethodService
 import com.example.chineseime.ui.curator.PhraseCuratorActivity
 import com.example.chineseime.ui.font.NomTypefaceProvider
 import com.google.android.material.appbar.MaterialToolbar
@@ -118,6 +119,9 @@ class SettingsActivity : AppCompatActivity() {
             addView(eyebrow("02  TYPING"))
             addView(title("Input behaviour"))
             addView(body("Keep sentence composition predictable while you type Vietnamese or Telex."))
+
+            val prefs = getSharedPreferences(NomInputMethodService.PREFS, MODE_PRIVATE)
+
             addView(SwitchMaterial(this@SettingsActivity).apply {
                 text = "Space selects the first candidate"
                 textSize = 15f
@@ -127,15 +131,43 @@ class SettingsActivity : AppCompatActivity() {
                     arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
                     intArrayOf(ACCENT_DARK, SURFACE_HIGH)
                 )
-                val prefs = getSharedPreferences("nom_settings", MODE_PRIVATE)
-                isChecked = prefs.getBoolean("space_select_first", false)
+                isChecked = prefs.getBoolean(NomInputMethodService.PREF_SPACE_SELECT, false)
                 setOnCheckedChangeListener { _, checked ->
-                    prefs.edit().putBoolean("space_select_first", checked).apply()
+                    prefs.edit()
+                        .putBoolean(NomInputMethodService.PREF_SPACE_SELECT, checked)
+                        .apply()
                 }
                 setPadding(0, dp(12), 0, 0)
             })
             addView(TextView(this@SettingsActivity).apply {
                 text = "Sentence mode keeps this off by default so spaces remain part of the Vietnamese phrase."
+                textSize = 12f
+                setTextColor(MUTED)
+                setPadding(0, dp(4), 0, 0)
+            })
+
+            addView(SwitchMaterial(this@SettingsActivity).apply {
+                text = "Show Quốc ngữ under Nôm candidates"
+                textSize = 15f
+                setTextColor(TEXT)
+                thumbTintList = ColorStateList.valueOf(ACCENT)
+                trackTintList = ColorStateList(
+                    arrayOf(intArrayOf(android.R.attr.state_checked), intArrayOf()),
+                    intArrayOf(ACCENT_DARK, SURFACE_HIGH)
+                )
+                isChecked = prefs.getBoolean(
+                    NomInputMethodService.PREF_SHOW_CANDIDATE_READING,
+                    false
+                )
+                setOnCheckedChangeListener { _, checked ->
+                    prefs.edit()
+                        .putBoolean(NomInputMethodService.PREF_SHOW_CANDIDATE_READING, checked)
+                        .apply()
+                }
+                setPadding(0, dp(14), 0, 0)
+            })
+            addView(TextView(this@SettingsActivity).apply {
+                text = "Off by default for a compact candidate row closer to a standard Chinese IME."
                 textSize = 12f
                 setTextColor(MUTED)
                 setPadding(0, dp(4), 0, 0)
