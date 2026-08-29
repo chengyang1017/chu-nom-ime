@@ -77,7 +77,7 @@ internal class ImeCandidateStrip(
             gravity = Gravity.CENTER
             maxLines = 1
             includeFontPadding = true
-            setPadding(0, dp(5), 0, dp(5))
+            setPadding(0, dp(1), 0, dp(1))
         }
         val reading = TextView(context).apply {
             textSize = 10.5f
@@ -90,9 +90,9 @@ internal class ImeCandidateStrip(
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(10), dp(2), dp(10), dp(2))
-            minimumWidth = dp(68)
-            minimumHeight = dp(64)
+            setPadding(dp(6), 0, dp(6), 0)
+            minimumWidth = dp(54)
+            minimumHeight = dp(50)
             clipChildren = false
             clipToPadding = false
             background = roundedBackground(
@@ -103,7 +103,7 @@ internal class ImeCandidateStrip(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply {
-                rightMargin = dp(2)
+                rightMargin = dp(1)
             }
             visibility = View.GONE
             addView(
@@ -131,7 +131,7 @@ internal class ImeCandidateStrip(
     private fun roundedBackground(color: Int, stroke: Int): GradientDrawable =
         GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(10).toFloat()
+            cornerRadius = dp(9).toFloat()
             setColor(color)
             if (stroke != Color.TRANSPARENT) setStroke(dp(1), stroke)
         }
