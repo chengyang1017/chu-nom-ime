@@ -87,7 +87,6 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(6), 0, dp(6), 0)
-            minimumHeight = dp(42)
         }
         t9Strip = T9PredictionStrip(
             context = this,
@@ -98,9 +97,8 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
             addView(t9Candidates)
-            visibility = View.GONE
         }
-        root.addView(t9Scroller, LinearLayout.LayoutParams(-1, dp(44)))
+        keyboard.setNineKeyAccessory(t9Scroller)
 
         candidates = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -557,8 +555,8 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         val t9SurfaceActive =
             keyboard.currentMode == KeyboardMode.NINE_KEY &&
                 t9Digits.isNotEmpty() &&
-                t9Predictions.isNotEmpty()
-        t9Scroller.visibility = if (t9SurfaceActive) View.VISIBLE else View.GONE
+                t9Predictions.size > 1
+        keyboard.setNineKeyAccessoryVisible(t9SurfaceActive)
         if (t9SurfaceActive) {
             t9Strip.render(t9Predictions, selectedT9PredictionIndex)
         } else {
