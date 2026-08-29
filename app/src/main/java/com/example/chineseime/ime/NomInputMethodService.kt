@@ -13,6 +13,7 @@ import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
+import android.widget.ScrollView
 import com.example.chineseime.data.local.NomDatabase
 import com.example.chineseime.data.repository.SQLiteNomRepository
 import com.example.chineseime.engine.sentence.LatestQueryCoordinator
@@ -35,7 +36,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     private lateinit var keyboard: KeyboardController
     private lateinit var input: InputConnectionController
     private lateinit var root: LinearLayout
-    private lateinit var t9Scroller: HorizontalScrollView
+    private lateinit var t9Scroller: ScrollView
     private lateinit var t9Candidates: LinearLayout
     private lateinit var t9Strip: T9PredictionStrip
     private lateinit var candidateScroller: HorizontalScrollView
@@ -84,19 +85,26 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         }
 
         t9Candidates = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), 0, dp(6), 0)
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.TOP
+            setPadding(0, dp(2), 0, dp(2))
         }
         t9Strip = T9PredictionStrip(
             context = this,
             host = t9Candidates,
             onSelect = ::selectT9Prediction
         )
-        t9Scroller = HorizontalScrollView(this).apply {
-            isHorizontalScrollBarEnabled = false
+        t9Scroller = ScrollView(this).apply {
+            isVerticalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
-            addView(t9Candidates)
+            isFillViewport = true
+            addView(
+                t9Candidates,
+                ScrollView.LayoutParams(
+                    ScrollView.LayoutParams.MATCH_PARENT,
+                    ScrollView.LayoutParams.WRAP_CONTENT
+                )
+            )
         }
         keyboard.setNineKeyAccessory(t9Scroller)
 
