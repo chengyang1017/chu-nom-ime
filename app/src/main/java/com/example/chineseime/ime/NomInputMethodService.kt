@@ -105,8 +105,10 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         candidates = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(4), 0, dp(4), 0)
-            minimumHeight = dp(56)
+            setPadding(dp(4), dp(2), dp(4), dp(2))
+            minimumHeight = dp(68)
+            clipChildren = false
+            clipToPadding = false
         }
         candidateStrip = ImeCandidateStrip(
             context = this,
@@ -121,10 +123,12 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         candidateScroller = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
+            clipChildren = false
+            clipToPadding = false
             addView(candidates)
             visibility = View.GONE
         }
-        root.addView(candidateScroller, LinearLayout.LayoutParams(-1, dp(58)))
+        root.addView(candidateScroller, LinearLayout.LayoutParams(-1, -2))
         root.addView(keyboard.build())
 
         updateUi()
