@@ -563,7 +563,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         if (!::composition.isInitialized) return
         val display = state.displaySentence
         if (composition.text.toString() != display) composition.text = display
-        composition.visibility = if (display.isBlank()) View.GONE else View.VISIBLE
+        composition.visibility = View.GONE
 
         val t9SurfaceActive =
             keyboard.currentMode == KeyboardMode.NINE_KEY &&
