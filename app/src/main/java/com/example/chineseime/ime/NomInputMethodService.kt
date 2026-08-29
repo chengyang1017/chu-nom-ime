@@ -32,6 +32,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     }
     private lateinit var database: NomDatabase
     private lateinit var engine: SentenceNomEngine
+    private lateinit var t9Predictor: T9Predictor
     private lateinit var state: SentenceCompositionState
     private lateinit var keyboard: KeyboardController
     private lateinit var input: InputConnectionController
@@ -43,6 +44,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     private lateinit var typefaceProvider: NomTypefaceProvider
     private var nomMode = true
     private var directInputMode = false
+    private var t9Digits = ""
     @Volatile private var databaseReady = false
     private var sourceRows = 0
     private var searchRows = 0
@@ -57,6 +59,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         database = NomDatabase(this)
         val repository = SQLiteNomRepository(database)
         engine = SentenceNomEngine(repository)
+        t9Predictor = T9Predictor(repository)
         state = SentenceCompositionState()
         input = InputConnectionController { currentInputConnection }
         keyboard = KeyboardController(this, this)
@@ -119,6 +122,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     override fun onStartInput(info: EditorInfo?, restarting: Boolean) {
         super.onStartInput(info, restarting)
         state.reset()
+        resetT9Prediction()
         input.finishComposing()
         cancelPendingQueries()
         val inputClass = info?.inputType?.and(InputType.TYPE_MASK_CLASS)
@@ -143,7 +147,12 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         } else {
             getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(PREF_NOM_MODE, true)
         }
-        keyboard.configure(mode, nomMode, info?.imeOptions ?: EditorInfo.IME_ACTION_NONE)
+        keyboard.configure(
+            mode = mode,
+            isNomMode = nomMode,
+            imeOptions = info?.imeOptions ?: EditorInfo.IME_ACTION_NONE,
+            allowNineKey = !directInputMode
+        )
         if (::composition.isInitialized) updateUi()
         Log.i(TAG, "onStartInput mode=$mode nomMode=$nomMode directInput=$directInputMode")
     }
@@ -157,12 +166,14 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
 
     override fun onFinishInput() {
         state.reset()
+        resetT9Prediction()
         cancelPendingQueries()
         input.finishComposing()
         super.onFinishInput()
     }
 
     override fun onLetter(value: Char) {
+        resetT9Prediction()
         val keyPressedAt = SystemClock.elapsedRealtimeNanos()
         if (Log.isLoggable(TAG, Log.DEBUG)) {
             Log.d(TAG, "key=$value mode=${keyboard.currentMode} nomMode=$nomMode rawLength=${state.rawSentence.length}")
@@ -176,7 +187,15 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         if (nomMode) enqueueSentenceQuery(keyPressedAt)
     }
 
+    override fun onNineKeyDigit(value: Char) {
+        if (directInputMode || value !in '2'..'9') return
+        val keyPressedAt = SystemClock.elapsedRealtimeNanos()
+        t9Digits += value
+        applyT9Prediction(keyPressedAt)
+    }
+
     override fun onReplaceLastLetter(value: Char) {
+        resetT9Prediction()
         val keyPressedAt = SystemClock.elapsedRealtimeNanos()
         if (directInputMode) {
             input.delete()
@@ -198,6 +217,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     }
 
     override fun onSpace() {
+        resetT9Prediction()
         val keyPressedAt = SystemClock.elapsedRealtimeNanos()
         if (Log.isLoggable(TAG, Log.DEBUG)) {
             Log.d(TAG, "key=SPACE nomMode=$nomMode rawLength=${state.rawSentence.length}")
@@ -225,8 +245,30 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     override fun onDelete() {
         val keyPressedAt = SystemClock.elapsedRealtimeNanos()
         if (Log.isLoggable(TAG, Log.DEBUG)) {
-            Log.d(TAG, "key=DELETE nomMode=$nomMode rawLength=${state.rawSentence.length}")
+            Log.d(TAG, "key=DELETE nomMode=$nomMode rawLength=${state.rawSentence.length} t9Length=${t9Digits.length}")
         }
+
+        if (keyboard.currentMode == KeyboardMode.NINE_KEY && t9Digits.isNotEmpty()) {
+            t9Digits = t9Digits.dropLast(1)
+            if (t9Digits.isNotEmpty()) {
+                applyT9Prediction(keyPressedAt)
+            } else {
+                state.replaceCurrentToken("")
+                if (state.rawSentence.isEmpty()) {
+                    input.finishComposing()
+                    updateUi()
+                } else {
+                    showComposedImmediately()
+                }
+                if (nomMode && state.rawSentence.isNotBlank()) {
+                    enqueueSentenceQuery(keyPressedAt)
+                } else {
+                    cancelPendingQueries()
+                }
+            }
+            return
+        }
+
         if (state.rawSentence.isEmpty()) {
             input.delete()
             return
@@ -238,6 +280,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     }
 
     override fun onSymbol(value: String) {
+        resetT9Prediction()
         if (Log.isLoggable(TAG, Log.DEBUG)) {
             Log.d(TAG, "key=$value nomMode=$nomMode rawLength=${state.rawSentence.length}")
         }
@@ -248,6 +291,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     }
 
     override fun onEnter() {
+        resetT9Prediction()
         if (Log.isLoggable(TAG, Log.DEBUG)) {
             Log.d(TAG, "key=ENTER nomMode=$nomMode rawLength=${state.rawSentence.length}")
         }
@@ -257,6 +301,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
 
     override fun onLanguage() {
         if (directInputMode) return
+        resetT9Prediction()
         commitCurrentComposition()
         nomMode = !nomMode
         getSharedPreferences(PREFS, MODE_PRIVATE)
@@ -269,11 +314,32 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     }
 
     override fun onMode(mode: KeyboardMode) {
+        resetT9Prediction()
         keyboard.showMode(mode)
     }
 
     override fun onShift() {
         keyboard.toggleShift()
+    }
+
+    private fun applyT9Prediction(keyPressedAt: Long = SystemClock.elapsedRealtimeNanos()) {
+        if (t9Digits.isEmpty()) return
+        val prediction = if (databaseReady) {
+            t9Predictor.predict(t9Digits, 1).firstOrNull()
+        } else {
+            null
+        }
+        state.replaceCurrentToken(prediction ?: t9Digits)
+        showComposedImmediately()
+        if (nomMode && databaseReady && prediction != null) {
+            enqueueSentenceQuery(keyPressedAt)
+        } else {
+            cancelPendingQueries()
+        }
+    }
+
+    private fun resetT9Prediction() {
+        t9Digits = ""
     }
 
     private fun enqueueSentenceQuery(keyPressedAt: Long = SystemClock.elapsedRealtimeNanos()) {
@@ -354,6 +420,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
 
     private fun select(index: Int) {
         if (!nomMode || directInputMode) return
+        resetT9Prediction()
         val raw = state.rawSentence.trim()
         val candidate = state.choose(index) ?: return
         Log.i(
@@ -375,6 +442,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     }
 
     private fun commitCurrentComposition() {
+        resetT9Prediction()
         if (state.rawSentence.isBlank()) return
 
         if (!nomMode || directInputMode) {
@@ -431,7 +499,10 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
                         "device database initialized sourceRows=$sourceRows searchRows=$searchRows"
                     )
                     updateUi()
-                    if (nomMode && !directInputMode && state.rawSentence.isNotBlank()) enqueueSentenceQuery()
+                    when {
+                        keyboard.currentMode == KeyboardMode.NINE_KEY && t9Digits.isNotEmpty() -> applyT9Prediction()
+                        nomMode && !directInputMode && state.rawSentence.isNotBlank() -> enqueueSentenceQuery()
+                    }
                 }
             } catch (error: Throwable) {
                 Log.e(TAG, "database initialization failed", error)
