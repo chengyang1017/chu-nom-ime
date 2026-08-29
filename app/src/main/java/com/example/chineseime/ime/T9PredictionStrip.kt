@@ -1,24 +1,29 @@
 package com.example.chineseime.ime
 
 import android.content.Context
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import androidx.appcompat.widget.AppCompatTextView
-import com.example.chineseime.R
 
 internal class T9PredictionStrip(
     private val context: Context,
     private val host: LinearLayout,
     private val onSelect: (Int) -> Unit
 ) {
+    private data class Slot(
+        val root: LinearLayout,
+        val label: AppCompatTextView,
+        val indicator: View
+    )
+
     private val slots = List(MAX_PREDICTIONS) { index -> createSlot(index) }
     private var signature = ""
 
     init {
-        slots.forEach(host::addView)
+        slots.forEach { host.addView(it.root) }
     }
 
     fun render(values: List<String>, selectedIndex: Int) {
@@ -30,37 +35,68 @@ internal class T9PredictionStrip(
         slots.forEachIndexed { index, slot ->
             val value = visible.getOrNull(index)
             if (value == null) {
-                slot.visibility = View.GONE
+                slot.root.visibility = View.GONE
                 return@forEachIndexed
             }
 
-            if (slot.text.toString() != value) slot.text = value
+            if (slot.label.text.toString() != value) slot.label.text = value
             val selected = index == selectedIndex
-            slot.setTextColor(if (selected) ON_ACCENT else TEXT)
-            slot.backgroundTintList = ColorStateList.valueOf(if (selected) ACCENT else SURFACE_HIGH)
-            slot.visibility = View.VISIBLE
+            slot.label.setTextColor(if (selected) ACCENT else TEXT)
+            slot.indicator.setBackgroundColor(if (selected) ACCENT else Color.TRANSPARENT)
+            slot.root.visibility = View.VISIBLE
         }
     }
 
     fun clear() {
-        if (signature.isEmpty() && slots.all { it.visibility == View.GONE }) return
+        if (signature.isEmpty() && slots.all { it.root.visibility == View.GONE }) return
         signature = ""
-        slots.forEach { it.visibility = View.GONE }
+        slots.forEach { it.root.visibility = View.GONE }
     }
 
-    private fun createSlot(index: Int) = AppCompatTextView(context).apply {
-        gravity = Gravity.CENTER
-        textSize = 14f
-        setTextColor(TEXT)
-        minWidth = dp(72)
-        minHeight = dp(38)
-        setPadding(dp(14), 0, dp(14), 0)
-        background = context.getDrawable(R.drawable.key_function_background)
-        visibility = View.GONE
-        layoutParams = LinearLayout.LayoutParams(-2, dp(38)).apply {
-            rightMargin = dp(6)
+    private fun createSlot(index: Int): Slot {
+        val label = AppCompatTextView(context).apply {
+            gravity = Gravity.CENTER
+            textSize = 13.5f
+            setTextColor(TEXT)
+            includeFontPadding = false
+            maxLines = 1
+            setPadding(dp(10), 0, dp(10), 0)
         }
-        setOnClickListener { onSelect(index) }
+
+        val indicator = View(context).apply {
+            setBackgroundColor(Color.TRANSPARENT)
+        }
+
+        val root = LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            minimumWidth = dp(60)
+            visibility = View.GONE
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                dp(34)
+            ).apply {
+                rightMargin = dp(2)
+            }
+            addView(
+                label,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    0,
+                    1f
+                )
+            )
+            addView(
+                indicator,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    dp(2)
+                )
+            )
+            setOnClickListener { onSelect(index) }
+        }
+
+        return Slot(root, label, indicator)
     }
 
     private fun dp(value: Int) = (value * context.resources.displayMetrics.density).toInt()
@@ -68,9 +104,7 @@ internal class T9PredictionStrip(
     private companion object {
         const val MAX_PREDICTIONS = 8
         const val SIGNATURE_SEPARATOR = "\u0001"
-        val SURFACE_HIGH = Color.rgb(24, 33, 43)
         val TEXT = Color.rgb(245, 247, 250)
         val ACCENT = Color.rgb(111, 199, 255)
-        val ON_ACCENT = Color.rgb(4, 17, 26)
     }
 }
