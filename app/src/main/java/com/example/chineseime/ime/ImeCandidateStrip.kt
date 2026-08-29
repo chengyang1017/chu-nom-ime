@@ -7,6 +7,7 @@ import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.HapticFeedbackConstants
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.example.chineseime.data.model.NomSentenceCandidate
@@ -76,12 +77,14 @@ internal class ImeCandidateStrip(
             gravity = Gravity.CENTER
             maxLines = 1
             includeFontPadding = true
+            setPadding(0, dp(5), 0, dp(5))
         }
         val reading = TextView(context).apply {
             textSize = 10.5f
             setTextColor(MUTED)
             gravity = Gravity.CENTER
             maxLines = 1
+            includeFontPadding = true
             visibility = View.GONE
         }
         val root = LinearLayout(context).apply {
@@ -89,17 +92,34 @@ internal class ImeCandidateStrip(
             gravity = Gravity.CENTER
             setPadding(dp(10), dp(2), dp(10), dp(2))
             minimumWidth = dp(68)
-            minimumHeight = dp(54)
+            minimumHeight = dp(64)
+            clipChildren = false
+            clipToPadding = false
             background = roundedBackground(
                 color = if (index == 0) SURFACE_HIGH else Color.TRANSPARENT,
                 stroke = if (index == 0) BORDER else Color.TRANSPARENT
             )
-            layoutParams = LinearLayout.LayoutParams(-2, dp(54)).apply {
+            layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
                 rightMargin = dp(2)
             }
             visibility = View.GONE
-            addView(nom, LinearLayout.LayoutParams(-2, dp(34)))
-            addView(reading, LinearLayout.LayoutParams(-2, dp(16)))
+            addView(
+                nom,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
+            addView(
+                reading,
+                LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+            )
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 onSelect(index)
