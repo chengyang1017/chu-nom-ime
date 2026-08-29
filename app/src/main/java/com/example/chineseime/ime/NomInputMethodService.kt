@@ -49,6 +49,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     private var t9Digits = ""
     private var t9Predictions: List<String> = emptyList()
     private var selectedT9PredictionIndex = -1
+    private var t9Tone = T9Tone.AUTO
     @Volatile private var databaseReady = false
     private var sourceRows = 0
     private var searchRows = 0
@@ -138,6 +139,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         root.addView(candidateScroller, LinearLayout.LayoutParams(-1, -2))
         root.addView(keyboard.build())
 
+        keyboard.setNineKeyTone(t9Tone)
         updateUi()
         return root
     }
@@ -184,6 +186,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         super.onStartInputView(info, restarting)
         keyboard.showMode(keyboard.currentMode)
         keyboard.setNomMode(nomMode)
+        keyboard.setNineKeyTone(t9Tone)
         updateUi()
     }
 
@@ -215,6 +218,17 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         val keyPressedAt = SystemClock.elapsedRealtimeNanos()
         t9Digits += value
         applyT9Prediction(keyPressedAt)
+    }
+
+    override fun onNineKeyTone() {
+        if (directInputMode || keyboard.currentMode != KeyboardMode.NINE_KEY) return
+        t9Tone = t9Tone.next()
+        keyboard.setNineKeyTone(t9Tone)
+        if (t9Digits.isNotEmpty()) {
+            applyT9Prediction(SystemClock.elapsedRealtimeNanos())
+        } else {
+            updateUi()
+        }
     }
 
     override fun onReplaceLastLetter(value: Char) {
@@ -276,8 +290,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
             if (t9Digits.isNotEmpty()) {
                 applyT9Prediction(keyPressedAt)
             } else {
-                t9Predictions = emptyList()
-                selectedT9PredictionIndex = -1
+                resetT9Prediction()
                 state.replaceCurrentToken("")
                 if (state.rawSentence.isEmpty()) {
                     input.finishComposing()
@@ -350,15 +363,24 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
 
     private fun applyT9Prediction(keyPressedAt: Long = SystemClock.elapsedRealtimeNanos()) {
         if (t9Digits.isEmpty()) return
-        t9Predictions = if (databaseReady) {
+
+        val automaticPredictions = if (databaseReady) {
             t9Predictor.predict(t9Digits, T9_PREDICTION_LIMIT)
         } else {
             emptyList()
         }
+        t9Predictions = when {
+            !databaseReady -> emptyList()
+            t9Tone == T9Tone.AUTO -> automaticPredictions
+            else -> t9Predictor.predictWithTone(t9Digits, t9Tone, T9_PREDICTION_LIMIT)
+        }
+
         selectedT9PredictionIndex = if (t9Predictions.isEmpty()) -1 else 0
         val prediction = t9Predictions.firstOrNull()
-        state.replaceCurrentToken(prediction ?: t9Digits)
+        val displayFallback = automaticPredictions.firstOrNull()
+        state.replaceCurrentToken(prediction ?: displayFallback ?: t9Digits)
         showComposedImmediately()
+
         if (nomMode && databaseReady && prediction != null) {
             enqueueSentenceQuery(keyPressedAt)
         } else {
@@ -384,6 +406,8 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         t9Digits = ""
         t9Predictions = emptyList()
         selectedT9PredictionIndex = -1
+        t9Tone = T9Tone.AUTO
+        if (::keyboard.isInitialized) keyboard.setNineKeyTone(t9Tone)
     }
 
     private fun enqueueSentenceQuery(keyPressedAt: Long = SystemClock.elapsedRealtimeNanos()) {
@@ -561,6 +585,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     private fun updateUi() {
         if (!::candidateStrip.isInitialized) return
 
+        keyboard.setNineKeyTone(t9Tone)
         val t9SurfaceActive =
             keyboard.currentMode == KeyboardMode.NINE_KEY &&
                 t9Digits.isNotEmpty() &&
