@@ -72,10 +72,10 @@ class KeyboardController(
 
     private inner class KeyboardPanel(context: Context) : LinearLayout(context) {
         private val tag = "NOM_IME"
-        private val horizontalPadding = dp(5)
-        private val horizontalGap = dp(3)
-        private val verticalGap = dp(4)
-        private val keyHeight = dp(48)
+        private val horizontalPadding = dp(6)
+        private val horizontalGap = dp(4)
+        private val verticalGap = dp(5)
+        private val keyHeight = dp(50)
         private val pageHost = FrameLayout(context)
         private var pagesCreated = false
         private var cachedMeasuredWidth = 0
@@ -88,10 +88,10 @@ class KeyboardController(
 
         init {
             orientation = VERTICAL
-            setPadding(horizontalPadding, dp(5), horizontalPadding, dp(5))
-            setBackgroundColor(Color.rgb(23, 25, 28))
-            minimumHeight = dp(218)
-            addView(pageHost, LayoutParams(LayoutParams.MATCH_PARENT, dp(208)))
+            setPadding(horizontalPadding, dp(6), horizontalPadding, dp(6))
+            setBackgroundColor(BACKGROUND)
+            minimumHeight = dp(232)
+            addView(pageHost, LayoutParams(LayoutParams.MATCH_PARENT, dp(220)))
             post { createPagesAfterLayout() }
         }
 
@@ -155,10 +155,12 @@ class KeyboardController(
 
         fun updateDynamicKeys() {
             if (!pagesCreated) return
-            letterKeys.forEach { (letter, key) -> key.text = (if (shifted) letter.uppercaseChar() else letter).toString() }
+            letterKeys.forEach { (letter, key) ->
+                key.text = (if (shifted) letter.uppercaseChar() else letter).toString()
+            }
             languageKeys.forEach { key ->
-                key.text = if (nomMode) "Nôm/EN" else "EN/Nôm"
-                key.setTextColor(if (nomMode) Color.rgb(187, 134, 252) else Color.rgb(184, 188, 194))
+                key.text = if (nomMode) "NÔM" else "EN"
+                key.setTextColor(if (nomMode) ACCENT else MUTED)
             }
             enterKeys.forEach { it.setImageResource(enterIcon()) }
         }
@@ -173,7 +175,9 @@ class KeyboardController(
             row.addView(iconKey(R.drawable.ic_shift, special) { listener.onShift() })
             "zxcvbnm".forEach { letter ->
                 addGap(row)
-                val key = textKey(letter.toString(), unit) { listener.onLetter(if (shifted) letter.uppercaseChar() else letter) }
+                val key = textKey(letter.toString(), unit) {
+                    listener.onLetter(if (shifted) letter.uppercaseChar() else letter)
+                }
                 letterKeys += letter to key
                 row.addView(key)
             }
@@ -184,7 +188,12 @@ class KeyboardController(
             return page
         }
 
-        private fun buildGridPage(rows: List<String>, unit: Int, available: Int, mode: KeyboardMode): View = page().apply {
+        private fun buildGridPage(
+            rows: List<String>,
+            unit: Int,
+            available: Int,
+            mode: KeyboardMode
+        ): View = page().apply {
             rows.forEach { addView(characterRow(it, unit, available, letters = false)) }
             addView(bottomRow(unit, available, mode))
         }
@@ -195,7 +204,8 @@ class KeyboardController(
             chars.forEachIndexed { index, char ->
                 if (index > 0) addGap(row)
                 val key = textKey(char.toString(), unit) {
-                    if (letters) listener.onLetter(if (shifted) char.uppercaseChar() else char) else listener.onSymbol(char.toString())
+                    if (letters) listener.onLetter(if (shifted) char.uppercaseChar() else char)
+                    else listener.onSymbol(char.toString())
                 }
                 if (letters) letterKeys += char to key
                 row.addView(key)
@@ -233,39 +243,57 @@ class KeyboardController(
 
         private fun enterIcon(): Int = when (enterAction and EditorInfo.IME_MASK_ACTION) {
             EditorInfo.IME_ACTION_SEARCH -> R.drawable.ic_search
-            EditorInfo.IME_ACTION_DONE, EditorInfo.IME_ACTION_GO, EditorInfo.IME_ACTION_SEND -> R.drawable.ic_done
-            EditorInfo.IME_ACTION_NEXT, EditorInfo.IME_ACTION_PREVIOUS -> R.drawable.ic_next
+            EditorInfo.IME_ACTION_DONE,
+            EditorInfo.IME_ACTION_GO,
+            EditorInfo.IME_ACTION_SEND -> R.drawable.ic_done
+            EditorInfo.IME_ACTION_NEXT,
+            EditorInfo.IME_ACTION_PREVIOUS -> R.drawable.ic_next
             else -> R.drawable.ic_enter
         }
 
         private fun page() = LinearLayout(context).apply {
             orientation = VERTICAL
-            setBackgroundColor(Color.rgb(23, 25, 28))
+            setBackgroundColor(BACKGROUND)
         }
 
-        private fun frameParams() = FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT)
+        private fun frameParams() = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT
+        )
 
         private fun newRow(sidePadding: Int, bottom: Boolean = true) = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(sidePadding, 0, sidePadding, 0)
-            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, keyHeight).apply { if (bottom) bottomMargin = verticalGap }
+            layoutParams = LayoutParams(LayoutParams.MATCH_PARENT, keyHeight).apply {
+                if (bottom) bottomMargin = verticalGap
+            }
         }
 
-        private fun textKey(label: String, width: Int, function: Boolean = false, click: () -> Unit) = AppCompatTextView(context).apply {
+        private fun textKey(
+            label: String,
+            width: Int,
+            function: Boolean = false,
+            click: () -> Unit
+        ) = AppCompatTextView(context).apply {
             text = label
             gravity = Gravity.CENTER
-            setTextColor(if (function) Color.rgb(184, 188, 194) else Color.rgb(241, 241, 241))
-            textSize = if (function) 14f else 18f
+            setTextColor(if (function) MUTED else TEXT)
+            textSize = if (function) 13f else 18f
             typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
             includeFontPadding = false
-            background = context.getDrawable(if (function) R.drawable.key_function_background else R.drawable.key_background)
+            background = context.getDrawable(
+                if (function) R.drawable.key_function_background else R.drawable.key_background
+            )
             layoutParams = LayoutParams(width, keyHeight)
             isClickable = true
             isFocusable = true
-            setOnClickListener { performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); click() }
+            setOnClickListener {
+                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                click()
+            }
         }
 
         private fun iconKey(icon: Int, width: Int, click: () -> Unit) = ImageButton(context).apply {
@@ -275,10 +303,20 @@ class KeyboardController(
             contentDescription = null
             background = context.getDrawable(R.drawable.key_function_background)
             layoutParams = LayoutParams(width, keyHeight)
-            setOnClickListener { performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP); click() }
+            setOnClickListener {
+                performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
+                click()
+            }
         }
 
         private fun addGap(row: LinearLayout) = row.addView(Space(context), LayoutParams(horizontalGap, 1))
         private fun dp(value: Int) = (value * resources.displayMetrics.density).roundToInt()
+    }
+
+    companion object {
+        private val BACKGROUND = Color.rgb(10, 13, 18)
+        private val TEXT = Color.rgb(245, 247, 250)
+        private val MUTED = Color.rgb(151, 163, 179)
+        private val ACCENT = Color.rgb(111, 199, 255)
     }
 }
