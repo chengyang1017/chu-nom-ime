@@ -1,6 +1,5 @@
 package com.example.chineseime.ui.curator
 
-import android.content.res.ColorStateList
 import android.graphics.Color
 import android.os.Bundle
 import android.view.MenuItem
@@ -9,21 +8,55 @@ import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.content.res.AppCompatResources
+import com.example.chineseime.data.corpus.VerifiedPhraseImportPlan
 import com.google.android.material.appbar.MaterialToolbar
 import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.TextInputLayout
 
 class PhraseCuratorActivity : AppCompatActivity() {
     private var curatorView: PhraseCuratorView? = null
+    private lateinit var backupController: PhraseBackupController
+
+    private val exportBackupLauncher = registerForActivityResult(
+        ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null && ::backupController.isInitialized) {
+            backupController.exportBackup(uri) { result ->
+                result.onSuccess { count ->
+                    MaterialAlertDialogBuilder(this)
+                        .setTitle("Backup saved")
+                        .setMessage("Saved $count verified phrase(s) to the selected file.")
+                        .setPositiveButton("Done", null)
+                        .show()
+                }.onFailure { error ->
+                    showBackupError("Export failed", error)
+                }
+            }
+        }
+    }
+
+    private val importBackupLauncher = registerForActivityResult(
+        ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null && ::backupController.isInitialized) {
+            backupController.inspectImport(uri) { result ->
+                result.onSuccess(::showImportPlan)
+                    .onFailure { error -> showBackupError("Import failed", error) }
+            }
+        }
+    }
 
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
         window.statusBarColor = BACKGROUND
         window.navigationBarColor = BACKGROUND
+        backupController = PhraseBackupController(this)
 
         val root = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -41,7 +74,8 @@ class PhraseCuratorActivity : AppCompatActivity() {
             navigationIcon?.setTint(TEXT)
             setNavigationOnClickListener { finish() }
             menu.add("Library").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
-            menu.add("Export").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
+            menu.add("Export backup").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
+            menu.add("Import backup").setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER)
         }
         root.addView(toolbar, LinearLayout.LayoutParams(-1, -2))
 
@@ -76,15 +110,70 @@ class PhraseCuratorActivity : AppCompatActivity() {
                     curatorView?.showSavedPhrases()
                     true
                 }
-                "Export" -> {
-                    curatorView?.copyCorpusJson()
+
+                "Export backup" -> {
+                    exportBackupLauncher.launch("verified_nom_phrases_backup.json")
                     true
                 }
+
+                "Import backup" -> {
+                    importBackupLauncher.launch(arrayOf("application/json", "text/plain"))
+                    true
+                }
+
                 else -> false
             }
         }
 
         setContentView(root)
+    }
+
+    private fun showImportPlan(plan: VerifiedPhraseImportPlan) {
+        val message = buildString {
+            append("Checked ${plan.totalCount} phrase(s).\n\n")
+            append("New: ${plan.newCount}\n")
+            append("Already present or duplicated: ${plan.duplicateCount}\n\n")
+            append("Existing phrases on this device will not be deleted or overwritten.")
+        }
+
+        if (plan.newCount == 0) {
+            MaterialAlertDialogBuilder(this)
+                .setTitle("Nothing new to restore")
+                .setMessage(message)
+                .setPositiveButton("Done", null)
+                .show()
+            return
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Restore backup?")
+            .setMessage(message)
+            .setNegativeButton("Cancel", null)
+            .setPositiveButton("Import ${plan.newCount}") { _, _ ->
+                backupController.applyImport(plan) { result ->
+                    result.onSuccess { imported ->
+                        MaterialAlertDialogBuilder(this)
+                            .setTitle("Backup restored")
+                            .setMessage(
+                                "Imported ${imported.importedCount} phrase(s). " +
+                                    "Skipped ${imported.skippedCount} existing or duplicate phrase(s)."
+                            )
+                            .setPositiveButton("Done", null)
+                            .show()
+                    }.onFailure { error ->
+                        showBackupError("Restore failed", error)
+                    }
+                }
+            }
+            .show()
+    }
+
+    private fun showBackupError(title: String, error: Throwable) {
+        MaterialAlertDialogBuilder(this)
+            .setTitle(title)
+            .setMessage(error.message ?: error.javaClass.simpleName)
+            .setPositiveButton("Done", null)
+            .show()
     }
 
     private fun polishStudio(content: View, bottomBar: MaterialCardView) {
@@ -164,6 +253,7 @@ class PhraseCuratorActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         curatorView?.close()
+        if (::backupController.isInitialized) backupController.close()
         super.onDestroy()
     }
 
