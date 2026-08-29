@@ -176,6 +176,27 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         if (nomMode) enqueueSentenceQuery(keyPressedAt)
     }
 
+    override fun onReplaceLastLetter(value: Char) {
+        val keyPressedAt = SystemClock.elapsedRealtimeNanos()
+        if (directInputMode) {
+            input.delete()
+            input.commit(value.toString())
+            return
+        }
+        if (state.rawSentence.isEmpty()) {
+            onLetter(value)
+            return
+        }
+        state.replaceLastCodePoint(value.toString())
+        showComposedImmediately()
+        if (nomMode) enqueueSentenceQuery(keyPressedAt)
+    }
+
+    override fun onReplaceCommittedSymbol(value: String) {
+        input.delete()
+        input.commit(value)
+    }
+
     override fun onSpace() {
         val keyPressedAt = SystemClock.elapsedRealtimeNanos()
         if (Log.isLoggable(TAG, Log.DEBUG)) {
