@@ -18,6 +18,10 @@ captures/
 **/__pycache__/
 *.py[cod]
 
+# Optional locally installed Nôm font packs
+app/src/main/assets/fonts/gothic_nguyen_regular.ttf
+app/src/main/assets/fonts/nom_na_tong_regular.otf
+
 # Generated development artifacts
 tools/device_nom_dictionary.db
 tools/fonts/coverage_report.json
