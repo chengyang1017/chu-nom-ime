@@ -56,11 +56,11 @@ internal class T9PredictionStrip(
     private fun createSlot(index: Int): Slot {
         val label = AppCompatTextView(context).apply {
             gravity = Gravity.CENTER
-            textSize = 13.5f
+            textSize = 12.5f
             setTextColor(TEXT)
             includeFontPadding = false
             maxLines = 1
-            setPadding(dp(10), 0, dp(10), 0)
+            setPadding(dp(2), 0, dp(2), 0)
         }
 
         val indicator = View(context).apply {
@@ -70,13 +70,12 @@ internal class T9PredictionStrip(
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            minimumWidth = dp(60)
             visibility = View.GONE
             layoutParams = LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                dp(34)
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                dp(38)
             ).apply {
-                rightMargin = dp(2)
+                bottomMargin = dp(2)
             }
             addView(
                 label,
