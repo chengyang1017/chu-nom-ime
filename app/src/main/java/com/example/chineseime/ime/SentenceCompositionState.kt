@@ -18,12 +18,31 @@ class SentenceCompositionState(
     var selectedCandidateIndex: Int = -1; private set
 
     fun append(value: String) { rawSentence += value; changed() }
-    fun appendSpace() { if (rawSentence.isNotEmpty() && !rawSentence.endsWith(" ")) { rawSentence += " "; changed() } }
+
+    fun appendSpace() {
+        if (rawSentence.isNotEmpty() && !rawSentence.endsWith(" ")) {
+            rawSentence += " "
+            changed()
+        }
+    }
+
+    fun replaceLastCodePoint(value: String) {
+        if (rawSentence.isEmpty()) {
+            append(value)
+            return
+        }
+        val count = rawSentence.codePointCount(0, rawSentence.length)
+        rawSentence = rawSentence.substring(0, rawSentence.offsetByCodePoints(0, count - 1)) + value
+        changed()
+    }
+
     fun deleteCodePoint() {
         if (rawSentence.isEmpty()) return
         val count = rawSentence.codePointCount(0, rawSentence.length)
-        rawSentence = rawSentence.substring(0, rawSentence.offsetByCodePoints(0, count - 1)); changed()
+        rawSentence = rawSentence.substring(0, rawSentence.offsetByCodePoints(0, count - 1))
+        changed()
     }
+
     fun applyCandidates(generation: Long, candidates: List<NomSentenceCandidate>): Boolean {
         if (generation != queryGeneration) return false
         sentenceCandidates = candidates
@@ -32,19 +51,32 @@ class SentenceCompositionState(
         displaySentence = best?.let(::composeUsingSegmentation) ?: composeRaw()
         return true
     }
+
     fun choose(index: Int): NomSentenceCandidate? {
         val candidate = sentenceCandidates.getOrNull(index) ?: return null
         selectedCandidateIndex = index
         return candidate
     }
+
     fun reset() {
-        rawSentence = ""; displaySentence = ""; restoredSentence = ""; currentTokens = emptyList(); sentenceCandidates = emptyList()
-        selectedCandidateIndex = -1; isComposing = false; queryGeneration++
+        rawSentence = ""
+        displaySentence = ""
+        restoredSentence = ""
+        currentTokens = emptyList()
+        sentenceCandidates = emptyList()
+        selectedCandidateIndex = -1
+        isComposing = false
+        queryGeneration++
     }
+
     private fun changed() {
         currentTokens = rawSentence.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
-        displaySentence = composeRaw(); restoredSentence = ""; sentenceCandidates = emptyList(); selectedCandidateIndex = -1
-        isComposing = rawSentence.isNotEmpty(); queryGeneration++
+        displaySentence = composeRaw()
+        restoredSentence = ""
+        sentenceCandidates = emptyList()
+        selectedCandidateIndex = -1
+        isComposing = rawSentence.isNotEmpty()
+        queryGeneration++
     }
 
     private fun composeRaw(): String = parser.parse(rawSentence).composed
