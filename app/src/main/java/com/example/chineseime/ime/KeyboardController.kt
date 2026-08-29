@@ -69,6 +69,10 @@ class KeyboardController(
         panel?.showMode(currentMode)
     }
 
+    fun refreshCurrentMode() {
+        panel?.showMode(currentMode)
+    }
+
     fun showMode(mode: KeyboardMode) {
         currentMode = mode
         if (mode == KeyboardMode.LETTERS || mode == KeyboardMode.NINE_KEY) {
