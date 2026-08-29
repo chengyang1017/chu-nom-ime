@@ -53,6 +53,8 @@ class KeyboardController(
     var enterAction = EditorInfo.IME_ACTION_NONE
         private set
     private var panel: KeyboardPanel? = null
+    private var nineKeyAccessory: View? = null
+    private var nineKeyAccessoryVisible = false
 
     fun build(): View = panel ?: KeyboardPanel(context).also { panel = it }
 
@@ -89,6 +91,17 @@ class KeyboardController(
         panel?.updateDynamicKeys()
     }
 
+    fun setNineKeyAccessory(view: View) {
+        nineKeyAccessory = view
+        panel?.attachNineKeyAccessory(view)
+    }
+
+    fun setNineKeyAccessoryVisible(value: Boolean) {
+        if (nineKeyAccessoryVisible == value) return
+        nineKeyAccessoryVisible = value
+        panel?.updateNineKeyAccessoryVisibility()
+    }
+
     fun toggleShift() {
         shifted = !shifted
         panel?.resetNineKeyCycle()
@@ -101,6 +114,8 @@ class KeyboardController(
         private val horizontalGap = dp(4)
         private val verticalGap = dp(5)
         private val keyHeight = dp(50)
+        private val basePageHeight = dp(220)
+        private val nineKeyAccessoryHeight = dp(34)
         private val pageHost = FrameLayout(context)
         private var pagesCreated = false
         private var cachedMeasuredWidth = 0
@@ -108,6 +123,7 @@ class KeyboardController(
         private lateinit var nineKeyView: View
         private lateinit var numbersView: View
         private lateinit var symbolsView: View
+        private lateinit var nineKeyAccessoryHost: FrameLayout
         private val letterKeys = mutableListOf<Pair<Char, AppCompatTextView>>()
         private val languageKeys = mutableListOf<AppCompatTextView>()
         private val enterKeys = mutableListOf<ImageButton>()
@@ -120,8 +136,8 @@ class KeyboardController(
             orientation = VERTICAL
             setPadding(horizontalPadding, dp(6), horizontalPadding, dp(6))
             setBackgroundColor(BACKGROUND)
-            minimumHeight = dp(232)
-            addView(pageHost, LayoutParams(LayoutParams.MATCH_PARENT, dp(220)))
+            minimumHeight = basePageHeight + paddingTop + paddingBottom
+            addView(pageHost, LayoutParams(LayoutParams.MATCH_PARENT, basePageHeight))
             post { createPagesAfterLayout() }
         }
 
@@ -165,6 +181,7 @@ class KeyboardController(
                 pageHost.addView(numbersView, frameParams())
                 pageHost.addView(symbolsView, frameParams())
                 pagesCreated = true
+                nineKeyAccessory?.let(::attachNineKeyAccessory)
                 updateDynamicKeys()
                 showMode(currentMode)
                 Log.d(tag, "pages created: mode=$currentMode width=$cachedMeasuredWidth key=$normalWidth")
@@ -185,6 +202,7 @@ class KeyboardController(
             nineKeyView.visibility = if (mode == KeyboardMode.NINE_KEY) View.VISIBLE else View.GONE
             numbersView.visibility = if (mode == KeyboardMode.NUMBERS) View.VISIBLE else View.GONE
             symbolsView.visibility = if (mode == KeyboardMode.SYMBOLS) View.VISIBLE else View.GONE
+            updateNineKeyAccessoryVisibility()
             Log.d(
                 tag,
                 "mode=$mode width=$cachedMeasuredWidth visibility=L${lettersView.visibility}/9${nineKeyView.visibility}/N${numbersView.visibility}/S${symbolsView.visibility}"
@@ -201,6 +219,38 @@ class KeyboardController(
                 key.setTextColor(if (nomMode) ACCENT else MUTED)
             }
             enterKeys.forEach { it.setImageResource(enterIcon()) }
+        }
+
+        fun attachNineKeyAccessory(view: View) {
+            if (!pagesCreated || !::nineKeyAccessoryHost.isInitialized) return
+            (view.parent as? ViewGroup)?.removeView(view)
+            nineKeyAccessoryHost.removeAllViews()
+            nineKeyAccessoryHost.addView(
+                view,
+                FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT
+                )
+            )
+            updateNineKeyAccessoryVisibility()
+        }
+
+        fun updateNineKeyAccessoryVisibility() {
+            if (!pagesCreated || !::nineKeyAccessoryHost.isInitialized) return
+            val hasAccessory = nineKeyAccessory != null
+            val showAccessory = hasAccessory && nineKeyAccessoryVisible
+            nineKeyAccessoryHost.visibility = if (showAccessory) View.VISIBLE else View.GONE
+
+            val expanded = currentMode == KeyboardMode.NINE_KEY && showAccessory
+            val targetPageHeight = basePageHeight +
+                if (expanded) nineKeyAccessoryHeight + verticalGap else 0
+            val params = pageHost.layoutParams
+            if (params.height != targetPageHeight) {
+                params.height = targetPageHeight
+                pageHost.layoutParams = params
+            }
+            minimumHeight = targetPageHeight + paddingTop + paddingBottom
+            requestLayout()
         }
 
         fun resetNineKeyCycle() {
@@ -262,6 +312,17 @@ class KeyboardController(
                 }
                 page.addView(row)
             }
+
+            nineKeyAccessoryHost = FrameLayout(context).apply {
+                visibility = View.GONE
+            }
+            page.addView(
+                nineKeyAccessoryHost,
+                LayoutParams(LayoutParams.MATCH_PARENT, nineKeyAccessoryHeight).apply {
+                    bottomMargin = verticalGap
+                }
+            )
+
             page.addView(bottomRow(unit, available, KeyboardMode.NINE_KEY))
             return page
         }
