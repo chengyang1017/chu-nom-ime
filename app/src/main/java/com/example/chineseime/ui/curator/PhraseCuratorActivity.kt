@@ -8,10 +8,13 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.content.res.AppCompatResources
 import com.google.android.material.appbar.MaterialToolbar
+import com.google.android.material.button.MaterialButton
 import com.google.android.material.card.MaterialCardView
+import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.google.android.material.textfield.TextInputLayout
 
 class PhraseCuratorActivity : AppCompatActivity() {
@@ -44,7 +47,7 @@ class PhraseCuratorActivity : AppCompatActivity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(10), dp(18), dp(30))
+            setPadding(dp(18), dp(8), dp(18), dp(24))
         }
         val scroll = ScrollView(this).apply {
             isFillViewport = true
@@ -55,17 +58,17 @@ class PhraseCuratorActivity : AppCompatActivity() {
 
         val bottomBar = MaterialCardView(this).apply {
             setCardBackgroundColor(SURFACE)
-            radius = dp(22).toFloat()
-            cardElevation = dp(8).toFloat()
+            radius = dp(18).toFloat()
+            cardElevation = dp(6).toFloat()
             strokeColor = BORDER
             strokeWidth = dp(1)
         }
         root.addView(bottomBar, LinearLayout.LayoutParams(-1, -2).apply {
-            setMargins(dp(12), dp(4), dp(12), dp(12))
+            setMargins(dp(12), dp(4), dp(12), dp(10))
         })
 
         curatorView = PhraseCuratorView(this).also { it.attach(content, bottomBar) }
-        normalizeTextFieldHints(content)
+        polishStudio(content, bottomBar)
 
         toolbar.setOnMenuItemClickListener { item ->
             when (item.title?.toString()) {
@@ -84,16 +87,78 @@ class PhraseCuratorActivity : AppCompatActivity() {
         setContentView(root)
     }
 
-    private fun normalizeTextFieldHints(view: View) {
-        if (view is TextInputLayout && view.hint?.toString() == "Vietnamese phrase") {
-            // Keep one hint owner. Some OEM text renderers draw both the child hint and
-            // TextInputLayout's floating label at the same time, which causes overlap.
-            view.editText?.hint = null
-            view.placeholderText = "e.g. tôi yêu em"
-            view.setPlaceholderTextColor(ColorStateList.valueOf(MUTED))
+    private fun polishStudio(content: View, bottomBar: MaterialCardView) {
+        normalizeStudioViews(content)
+
+        (bottomBar.getChildAt(0) as? LinearLayout)?.setPadding(
+            dp(14),
+            dp(8),
+            dp(10),
+            dp(8)
+        )
+        polishBottomBar(bottomBar)
+    }
+
+    private fun normalizeStudioViews(view: View) {
+        when (view) {
+            is TextInputLayout -> {
+                view.hintEnabled = false
+                view.hint = null
+                view.placeholderText = null
+                view.boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
+                view.boxBackgroundColor = SURFACE_HIGH
+                view.boxStrokeColor = ACCENT
+                view.boxStrokeWidth = dp(1)
+                view.boxStrokeWidthFocused = dp(2)
+                view.setBoxCornerRadii(
+                    dp(14).toFloat(),
+                    dp(14).toFloat(),
+                    dp(14).toFloat(),
+                    dp(14).toFloat()
+                )
+                view.editText?.apply {
+                    hint = "Type Vietnamese · e.g. tôi yêu em"
+                    setHintTextColor(MUTED)
+                    background = null
+                    setPadding(dp(12), dp(8), dp(12), dp(8))
+                }
+            }
+
+            is LinearProgressIndicator -> {
+                // Token chips and the explicit verified count communicate progress more
+                // clearly on small phones. The stock indicator looked like a slider.
+                view.visibility = View.GONE
+            }
         }
+
         if (view is ViewGroup) {
-            for (index in 0 until view.childCount) normalizeTextFieldHints(view.getChildAt(index))
+            for (index in 0 until view.childCount) {
+                normalizeStudioViews(view.getChildAt(index))
+            }
+        }
+    }
+
+    private fun polishBottomBar(view: View) {
+        when (view) {
+            is MaterialButton -> if (view.text?.toString() == "Save") {
+                view.cornerRadius = dp(16)
+                view.layoutParams = view.layoutParams.apply {
+                    width = dp(96)
+                    height = dp(48)
+                }
+            }
+
+            is TextView -> when {
+                view.text?.toString() == "CURRENT NÔM" -> view.textSize = 9f
+                view.text?.toString() == "—" -> view.textSize = 24f
+                view.text?.toString()?.contains("saved locally") == true -> view.textSize = 10f
+            }
+        }
+
+        if (view is ViewGroup) {
+            for (index in 0 until view.childCount) {
+                polishBottomBar(view.getChildAt(index))
+            }
         }
     }
 
@@ -107,8 +172,10 @@ class PhraseCuratorActivity : AppCompatActivity() {
     companion object {
         private val BACKGROUND = Color.rgb(10, 13, 18)
         private val SURFACE = Color.rgb(18, 24, 32)
+        private val SURFACE_HIGH = Color.rgb(23, 31, 41)
         private val BORDER = Color.rgb(38, 50, 65)
         private val TEXT = Color.rgb(245, 247, 250)
         private val MUTED = Color.rgb(151, 163, 179)
+        private val ACCENT = Color.rgb(111, 199, 255)
     }
 }
