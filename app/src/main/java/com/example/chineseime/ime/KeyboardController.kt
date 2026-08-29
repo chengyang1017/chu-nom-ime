@@ -3,6 +3,7 @@ package com.example.chineseime.ime
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
+import android.os.SystemClock
 import android.text.TextUtils
 import android.util.Log
 import android.view.Gravity
@@ -19,7 +20,7 @@ import androidx.appcompat.widget.AppCompatTextView
 import com.example.chineseime.R
 import kotlin.math.roundToInt
 
-enum class KeyboardMode { LETTERS, NUMBERS, SYMBOLS }
+enum class KeyboardMode { LETTERS, NINE_KEY, NUMBERS, SYMBOLS }
 
 class KeyboardController(
     private val context: Context,
@@ -27,6 +28,8 @@ class KeyboardController(
 ) {
     interface Listener {
         fun onLetter(value: Char)
+        fun onReplaceLastLetter(value: Char)
+        fun onReplaceCommittedSymbol(value: String)
         fun onDelete()
         fun onSpace()
         fun onEnter()
@@ -36,7 +39,12 @@ class KeyboardController(
         fun onSymbol(value: String)
     }
 
-    var currentMode: KeyboardMode = KeyboardMode.LETTERS
+    private val prefs = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+    private var preferredTextMode =
+        if (prefs.getBoolean(PREF_NINE_KEY_LAYOUT, false)) KeyboardMode.NINE_KEY
+        else KeyboardMode.LETTERS
+
+    var currentMode: KeyboardMode = preferredTextMode
         private set
     var shifted = false
         private set
@@ -48,15 +56,21 @@ class KeyboardController(
     fun build(): View = panel ?: KeyboardPanel(context).also { panel = it }
 
     fun configure(mode: KeyboardMode, isNomMode: Boolean, imeOptions: Int) {
-        currentMode = mode
+        currentMode = if (mode == KeyboardMode.LETTERS) preferredTextMode else mode
         nomMode = isNomMode
         enterAction = imeOptions
         panel?.updateDynamicKeys()
-        panel?.showMode(mode)
+        panel?.showMode(currentMode)
     }
 
     fun showMode(mode: KeyboardMode) {
         currentMode = mode
+        if (mode == KeyboardMode.LETTERS || mode == KeyboardMode.NINE_KEY) {
+            preferredTextMode = mode
+            prefs.edit()
+                .putBoolean(PREF_NINE_KEY_LAYOUT, mode == KeyboardMode.NINE_KEY)
+                .apply()
+        }
         panel?.showMode(mode)
     }
 
@@ -67,6 +81,7 @@ class KeyboardController(
 
     fun toggleShift() {
         shifted = !shifted
+        panel?.resetNineKeyCycle()
         panel?.updateDynamicKeys()
     }
 
@@ -80,11 +95,16 @@ class KeyboardController(
         private var pagesCreated = false
         private var cachedMeasuredWidth = 0
         private lateinit var lettersView: View
+        private lateinit var nineKeyView: View
         private lateinit var numbersView: View
         private lateinit var symbolsView: View
         private val letterKeys = mutableListOf<Pair<Char, AppCompatTextView>>()
         private val languageKeys = mutableListOf<AppCompatTextView>()
         private val enterKeys = mutableListOf<ImageButton>()
+
+        private var lastNineKeyDigit: Char? = null
+        private var lastNineKeyIndex = 0
+        private var lastNineKeyAt = 0L
 
         init {
             orientation = VERTICAL
@@ -113,6 +133,7 @@ class KeyboardController(
             try {
                 val normalWidth = ((cachedMeasuredWidth - horizontalGap * 9) / 10f).roundToInt()
                 val newLetters = buildLettersPage(normalWidth, cachedMeasuredWidth)
+                val newNineKey = buildNineKeyPage(normalWidth, cachedMeasuredWidth)
                 val newNumbers = buildGridPage(
                     listOf("1234567890", "-/:;()\u0024&@\"", ".,?!'#+=%"),
                     normalWidth,
@@ -126,9 +147,11 @@ class KeyboardController(
                     KeyboardMode.SYMBOLS
                 )
                 lettersView = newLetters
+                nineKeyView = newNineKey
                 numbersView = newNumbers
                 symbolsView = newSymbols
                 pageHost.addView(lettersView, frameParams())
+                pageHost.addView(nineKeyView, frameParams())
                 pageHost.addView(numbersView, frameParams())
                 pageHost.addView(symbolsView, frameParams())
                 pagesCreated = true
@@ -142,15 +165,20 @@ class KeyboardController(
         }
 
         fun showMode(mode: KeyboardMode) {
+            resetNineKeyCycle()
             if (!pagesCreated) {
                 Log.d(tag, "mode queued: mode=$mode panel=$measuredWidth host=${pageHost.measuredWidth}")
                 post { createPagesAfterLayout() }
                 return
             }
             lettersView.visibility = if (mode == KeyboardMode.LETTERS) View.VISIBLE else View.GONE
+            nineKeyView.visibility = if (mode == KeyboardMode.NINE_KEY) View.VISIBLE else View.GONE
             numbersView.visibility = if (mode == KeyboardMode.NUMBERS) View.VISIBLE else View.GONE
             symbolsView.visibility = if (mode == KeyboardMode.SYMBOLS) View.VISIBLE else View.GONE
-            Log.d(tag, "mode=$mode width=$cachedMeasuredWidth visibility=L${lettersView.visibility}/N${numbersView.visibility}/S${symbolsView.visibility}")
+            Log.d(
+                tag,
+                "mode=$mode width=$cachedMeasuredWidth visibility=L${lettersView.visibility}/9${nineKeyView.visibility}/N${numbersView.visibility}/S${symbolsView.visibility}"
+            )
         }
 
         fun updateDynamicKeys() {
@@ -165,6 +193,12 @@ class KeyboardController(
             enterKeys.forEach { it.setImageResource(enterIcon()) }
         }
 
+        fun resetNineKeyCycle() {
+            lastNineKeyDigit = null
+            lastNineKeyIndex = 0
+            lastNineKeyAt = 0L
+        }
+
         private fun buildLettersPage(unit: Int, available: Int): View {
             val page = page()
             page.addView(characterRow("qwertyuiop", unit, available, letters = true))
@@ -172,10 +206,14 @@ class KeyboardController(
             val special = (unit * 1.4f).roundToInt()
             val content = special * 2 + unit * 7 + horizontalGap * 8
             val row = newRow(((available - content) / 2).coerceAtLeast(0))
-            row.addView(iconKey(R.drawable.ic_shift, special) { listener.onShift() })
+            row.addView(iconKey(R.drawable.ic_shift, special) {
+                resetNineKeyCycle()
+                listener.onShift()
+            })
             "zxcvbnm".forEach { letter ->
                 addGap(row)
                 val key = textKey(letter.toString(), unit) {
+                    resetNineKeyCycle()
                     listener.onLetter(if (shifted) letter.uppercaseChar() else letter)
                 }
                 letterKeys += letter to key
@@ -187,10 +225,34 @@ class KeyboardController(
                     R.drawable.ic_backspace,
                     special,
                     repeatOnHold = true
-                ) { listener.onDelete() }
+                ) {
+                    resetNineKeyCycle()
+                    listener.onDelete()
+                }
             )
             page.addView(row)
             page.addView(bottomRow(unit, available, KeyboardMode.LETTERS))
+            return page
+        }
+
+        private fun buildNineKeyPage(unit: Int, available: Int): View {
+            val page = page()
+            val keyWidth = ((available - horizontalGap * 2 - dp(28)) / 3f).roundToInt()
+            val rows = listOf(
+                listOf('1' to ".,?!", '2' to "ABC", '3' to "DEF"),
+                listOf('4' to "GHI", '5' to "JKL", '6' to "MNO"),
+                listOf('7' to "PQRS", '8' to "TUV", '9' to "WXYZ")
+            )
+            rows.forEach { groups ->
+                val content = keyWidth * 3 + horizontalGap * 2
+                val row = newRow(((available - content) / 2).coerceAtLeast(0))
+                groups.forEachIndexed { index, (digit, letters) ->
+                    if (index > 0) addGap(row)
+                    row.addView(nineKeyButton(digit, letters, keyWidth))
+                }
+                page.addView(row)
+            }
+            page.addView(bottomRow(unit, available, KeyboardMode.NINE_KEY))
             return page
         }
 
@@ -210,6 +272,7 @@ class KeyboardController(
             chars.forEachIndexed { index, char ->
                 if (index > 0) addGap(row)
                 val key = textKey(char.toString(), unit) {
+                    resetNineKeyCycle()
                     if (letters) listener.onLetter(if (shifted) char.uppercaseChar() else char)
                     else listener.onSymbol(char.toString())
                 }
@@ -225,26 +288,113 @@ class KeyboardController(
             val widths = intArrayOf(small, small, small, unit * 4, unit, enterWidth)
             val content = widths.sum() + horizontalGap * 5
             val row = newRow(((available - content) / 2).coerceAtLeast(0), bottom = false)
-            val firstLabel = if (mode == KeyboardMode.LETTERS) "123" else "ABC"
-            val firstMode = if (mode == KeyboardMode.LETTERS) KeyboardMode.NUMBERS else KeyboardMode.LETTERS
-            row.addView(textKey(firstLabel, widths[0], function = true) { listener.onMode(firstMode) })
+
+            val firstLabel = when (mode) {
+                KeyboardMode.LETTERS, KeyboardMode.NINE_KEY -> "123"
+                KeyboardMode.NUMBERS, KeyboardMode.SYMBOLS -> "ABC"
+            }
+            row.addView(textKey(firstLabel, widths[0], function = true) {
+                resetNineKeyCycle()
+                val target = when (mode) {
+                    KeyboardMode.LETTERS, KeyboardMode.NINE_KEY -> KeyboardMode.NUMBERS
+                    KeyboardMode.NUMBERS, KeyboardMode.SYMBOLS -> preferredTextMode
+                }
+                listener.onMode(target)
+            })
             addGap(row)
-            val secondLabel = if (mode == KeyboardMode.SYMBOLS) "123" else "=\\<"
-            val secondMode = if (mode == KeyboardMode.SYMBOLS) KeyboardMode.NUMBERS else KeyboardMode.SYMBOLS
-            row.addView(textKey(secondLabel, widths[1], function = true) { listener.onMode(secondMode) })
+
+            val secondLabel = when (mode) {
+                KeyboardMode.LETTERS -> "9K"
+                KeyboardMode.NINE_KEY -> "ABC"
+                KeyboardMode.NUMBERS -> "=\\<"
+                KeyboardMode.SYMBOLS -> "123"
+            }
+            row.addView(textKey(secondLabel, widths[1], function = true) {
+                resetNineKeyCycle()
+                val target = when (mode) {
+                    KeyboardMode.LETTERS -> KeyboardMode.NINE_KEY
+                    KeyboardMode.NINE_KEY -> KeyboardMode.LETTERS
+                    KeyboardMode.NUMBERS -> KeyboardMode.SYMBOLS
+                    KeyboardMode.SYMBOLS -> KeyboardMode.NUMBERS
+                }
+                listener.onMode(target)
+            })
             addGap(row)
-            val language = textKey("", widths[2], function = true) { listener.onLanguage() }
+
+            val language = textKey("", widths[2], function = true) {
+                resetNineKeyCycle()
+                listener.onLanguage()
+            }
             languageKeys += language
             row.addView(language)
             addGap(row)
-            row.addView(textKey("", widths[3]) { listener.onSpace() })
+
+            row.addView(textKey("", widths[3]) {
+                resetNineKeyCycle()
+                listener.onSpace()
+            })
             addGap(row)
-            row.addView(textKey(".", widths[4]) { listener.onSymbol(".") })
+
+            row.addView(textKey(".", widths[4]) {
+                resetNineKeyCycle()
+                listener.onSymbol(".")
+            })
             addGap(row)
-            val enter = iconKey(enterIcon(), widths[5]) { listener.onEnter() }
+
+            val enter = iconKey(enterIcon(), widths[5]) {
+                resetNineKeyCycle()
+                listener.onEnter()
+            }
             enterKeys += enter
             row.addView(enter)
             return row
+        }
+
+        private fun nineKeyButton(
+            digit: Char,
+            letters: String,
+            width: Int
+        ) = AppCompatTextView(context).apply {
+            text = "$digit\n$letters"
+            gravity = Gravity.CENTER
+            setTextColor(TEXT)
+            textSize = 14.5f
+            typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
+            maxLines = 2
+            includeFontPadding = false
+            setLineSpacing(0f, 0.92f)
+            background = context.getDrawable(R.drawable.key_background)
+            layoutParams = LayoutParams(width, keyHeight)
+            installImmediatePress { handleNineKeyPress(digit, letters) }
+        }
+
+        private fun handleNineKeyPress(digit: Char, group: String) {
+            val now = SystemClock.uptimeMillis()
+            val cycling =
+                lastNineKeyDigit == digit &&
+                    now - lastNineKeyAt <= NINE_KEY_CYCLE_TIMEOUT_MS
+            val index = if (cycling) (lastNineKeyIndex + 1) % group.length else 0
+
+            lastNineKeyDigit = digit
+            lastNineKeyIndex = index
+            lastNineKeyAt = now
+
+            val selected = group[index]
+            if (digit == '1') {
+                if (cycling) {
+                    listener.onReplaceCommittedSymbol(selected.toString())
+                } else {
+                    listener.onSymbol(selected.toString())
+                }
+                return
+            }
+
+            val letter = if (shifted) selected.uppercaseChar() else selected.lowercaseChar()
+            if (cycling) {
+                listener.onReplaceLastLetter(letter)
+            } else {
+                listener.onLetter(letter)
+            }
         }
 
         private fun enterIcon(): Int = when (enterAction and EditorInfo.IME_MASK_ACTION) {
@@ -352,11 +502,16 @@ class KeyboardController(
             setOnClickListener { click() }
         }
 
-        private fun addGap(row: LinearLayout) = row.addView(Space(context), LayoutParams(horizontalGap, 1))
+        private fun addGap(row: LinearLayout) =
+            row.addView(Space(context), LayoutParams(horizontalGap, 1))
+
         private fun dp(value: Int) = (value * resources.displayMetrics.density).roundToInt()
     }
 
     companion object {
+        private const val PREFS = "nom_settings"
+        private const val PREF_NINE_KEY_LAYOUT = "nine_key_layout"
+        private const val NINE_KEY_CYCLE_TIMEOUT_MS = 650L
         private const val DELETE_REPEAT_START_DELAY_MS = 320L
         private const val DELETE_REPEAT_INTERVAL_MS = 60L
         private val BACKGROUND = Color.rgb(10, 13, 18)
