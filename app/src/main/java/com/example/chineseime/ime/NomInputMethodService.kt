@@ -5,18 +5,17 @@ import android.graphics.drawable.GradientDrawable
 import android.inputmethodservice.InputMethodService
 import android.os.Handler
 import android.os.Looper
+import android.os.Process
 import android.os.SystemClock
 import android.text.InputType
 import android.util.Log
 import android.view.Gravity
-import android.view.HapticFeedbackConstants
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.example.chineseime.data.local.NomDatabase
-import com.example.chineseime.data.model.NomSentenceCandidate
 import com.example.chineseime.data.repository.SQLiteNomRepository
 import com.example.chineseime.engine.sentence.LatestQueryCoordinator
 import com.example.chineseime.engine.sentence.SentenceNomEngine
@@ -25,7 +24,12 @@ import java.util.concurrent.Executors
 
 class NomInputMethodService : InputMethodService(), KeyboardController.Listener {
     private val mainHandler = Handler(Looper.getMainLooper())
-    private val executor = Executors.newSingleThreadExecutor()
+    private val executor = Executors.newSingleThreadExecutor { task ->
+        Thread({
+            Process.setThreadPriority(Process.THREAD_PRIORITY_BACKGROUND)
+            task.run()
+        }, "NomImeEngine")
+    }
     private lateinit var database: NomDatabase
     private lateinit var engine: SentenceNomEngine
     private lateinit var state: SentenceCompositionState
@@ -35,6 +39,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     private lateinit var composition: TextView
     private lateinit var candidateScroller: HorizontalScrollView
     private lateinit var candidates: LinearLayout
+    private lateinit var candidateStrip: ImeCandidateStrip
     private lateinit var typefaceProvider: NomTypefaceProvider
     private var nomMode = true
     private var directInputMode = false
@@ -92,6 +97,12 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
             setPadding(dp(8), 0, dp(8), 0)
             minimumHeight = dp(70)
         }
+        candidateStrip = ImeCandidateStrip(
+            context = this,
+            host = candidates,
+            typeface = typefaceProvider.resolve("碎", 0).typeface,
+            onSelect = ::select
+        )
         candidateScroller = HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
@@ -153,7 +164,9 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
 
     override fun onLetter(value: Char) {
         val keyPressedAt = SystemClock.elapsedRealtimeNanos()
-        Log.d(TAG, "key=$value mode=${keyboard.currentMode} nomMode=$nomMode rawSentence=${state.rawSentence}")
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "key=$value mode=${keyboard.currentMode} nomMode=$nomMode rawLength=${state.rawSentence.length}")
+        }
         if (directInputMode) {
             input.commit(value.toString())
             return
@@ -165,7 +178,9 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
 
     override fun onSpace() {
         val keyPressedAt = SystemClock.elapsedRealtimeNanos()
-        Log.d(TAG, "key=SPACE nomMode=$nomMode rawSentence=${state.rawSentence}")
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "key=SPACE nomMode=$nomMode rawLength=${state.rawSentence.length}")
+        }
         if (directInputMode) {
             input.commit(" ")
             return
@@ -188,18 +203,23 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
 
     override fun onDelete() {
         val keyPressedAt = SystemClock.elapsedRealtimeNanos()
-        Log.d(TAG, "key=DELETE nomMode=$nomMode rawSentence=${state.rawSentence}")
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "key=DELETE nomMode=$nomMode rawLength=${state.rawSentence.length}")
+        }
         if (state.rawSentence.isEmpty()) {
             input.delete()
             return
         }
         state.deleteCodePoint()
         if (state.rawSentence.isEmpty()) input.finishComposing() else showComposedImmediately()
+        updateUi()
         if (nomMode) enqueueSentenceQuery(keyPressedAt) else cancelPendingQueries()
     }
 
     override fun onSymbol(value: String) {
-        Log.d(TAG, "key=$value nomMode=$nomMode rawSentence=${state.rawSentence}")
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "key=$value nomMode=$nomMode rawLength=${state.rawSentence.length}")
+        }
         if (!directInputMode && state.rawSentence.isNotBlank()) {
             commitCurrentComposition()
         }
@@ -207,7 +227,9 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     }
 
     override fun onEnter() {
-        Log.d(TAG, "key=ENTER nomMode=$nomMode rawSentence=${state.rawSentence}")
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(TAG, "key=ENTER nomMode=$nomMode rawLength=${state.rawSentence.length}")
+        }
         commitCurrentComposition()
         input.enter(keyboard.enterAction)
     }
@@ -240,7 +262,6 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         queryCoordinator.activate(generation)
         val scheduledAt = SystemClock.elapsedRealtimeNanos()
         lastQuery = snapshot
-        updateUi()
         pendingQuery?.let { mainHandler.removeCallbacks(it) }
         if (snapshot.isBlank() || !databaseReady) return
         if (Log.isLoggable(TAG, Log.DEBUG)) {
@@ -264,7 +285,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
                 val backgroundStarted = SystemClock.elapsedRealtimeNanos()
                 val context = queryCoordinator.context(generation)
                 try {
-                    val result = engine.query(snapshot, 8, context)
+                    val result = engine.query(snapshot, MAX_CANDIDATES, context)
                     if (context.isCancelled()) {
                         if (Log.isLoggable(TAG, Log.DEBUG)) {
                             Log.d(
@@ -288,7 +309,7 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
                                     "query timing generation=$generation debounceMs=${millis(debounceFinishedAt - scheduledAt)} queueMs=${millis(backgroundStarted - debounceFinishedAt)} segmentMs=${context.metrics.milliseconds(context.metrics.segmentationNanos)} databaseMs=${context.metrics.milliseconds(context.metrics.dictionaryLookupNanos)} beamMs=${context.metrics.milliseconds(context.metrics.beamGenerationNanos)} rankingMs=${context.metrics.milliseconds(context.metrics.candidateRankingNanos)} engineMs=${context.metrics.milliseconds(context.metrics.totalEngineNanos)} backgroundToMainMs=${millis(applyStarted - backgroundFinished)} applyMs=${millis(SystemClock.elapsedRealtimeNanos() - applyStarted)} keyToCandidateMs=${millis(SystemClock.elapsedRealtimeNanos() - keyPressedAt)} lookups=${context.metrics.dictionaryLookupCount} sqliteCalls=0 fastPath=${context.metrics.fastPath} rawLength=${snapshot.length} candidateCount=${result.size} endsWithSpace=${parsed.endsWithSpace} barVisible=${candidateScroller.visibility == View.VISIBLE}"
                                 )
                             }
-                        } else {
+                        } else if (Log.isLoggable(TAG, Log.DEBUG)) {
                             Log.d(
                                 TAG,
                                 "stale or inactive sentence query ignored generation=$generation current=${state.queryGeneration} nomMode=$nomMode"
@@ -368,10 +389,12 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
     private fun showComposedImmediately() {
         input.setComposing(state.displaySentence)
         updateUi()
-        Log.d(
-            TAG,
-            "setComposingText rawSentence=${state.rawSentence} displaySentence=${state.displaySentence} restoredSentence=${state.restoredSentence} nomMode=$nomMode"
-        )
+        if (Log.isLoggable(TAG, Log.DEBUG)) {
+            Log.d(
+                TAG,
+                "setComposingText rawLength=${state.rawSentence.length} displayLength=${state.displaySentence.length} restoredLength=${state.restoredSentence.length} nomMode=$nomMode"
+            )
+        }
     }
 
     private fun initializeDatabase() {
@@ -401,54 +424,17 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
 
     private fun updateUi() {
         if (!::composition.isInitialized) return
-        composition.text = state.displaySentence
-        composition.visibility = if (state.displaySentence.isBlank()) View.GONE else View.VISIBLE
+        val display = state.displaySentence
+        if (composition.text.toString() != display) composition.text = display
+        composition.visibility = if (display.isBlank()) View.GONE else View.VISIBLE
 
-        candidates.removeAllViews()
-        if (nomMode && !directInputMode) {
-            state.sentenceCandidates.forEachIndexed { index, candidate ->
-                candidates.addView(candidateCard(candidate, index))
-            }
-        }
-        candidateScroller.visibility = if (candidates.childCount == 0) View.GONE else View.VISIBLE
-    }
+        val candidateSurfaceActive = nomMode && !directInputMode && state.rawSentence.isNotBlank()
+        candidateScroller.visibility = if (candidateSurfaceActive) View.VISIBLE else View.GONE
 
-    private fun candidateCard(candidate: NomSentenceCandidate, index: Int) = LinearLayout(this).apply {
-        orientation = LinearLayout.VERTICAL
-        gravity = Gravity.CENTER
-        setPadding(dp(14), dp(6), dp(14), dp(6))
-        minimumWidth = dp(104)
-        minimumHeight = dp(66)
-        background = roundedBackground(
-            color = if (index == 0) ACCENT_DARK else SURFACE,
-            radius = dp(15),
-            stroke = if (index == 0) ACCENT else BORDER
-        )
-        layoutParams = LinearLayout.LayoutParams(-2, dp(66)).apply {
-            rightMargin = dp(7)
-        }
-
-        val resolved = typefaceProvider.resolve(candidate.nomText, 0)
-        addView(TextView(this@NomInputMethodService).apply {
-            text = candidate.nomText
-            typeface = resolved.typeface
-            textSize = 25f
-            setTextColor(TEXT)
-            gravity = Gravity.CENTER
-            maxLines = 1
-            includeFontPadding = true
-        }, LinearLayout.LayoutParams(-2, dp(38)))
-        addView(TextView(this@NomInputMethodService).apply {
-            text = candidate.restoredVietnamese
-            textSize = 11.5f
-            setTextColor(if (index == 0) ACCENT else MUTED)
-            gravity = Gravity.CENTER
-            maxLines = 1
-        }, LinearLayout.LayoutParams(-2, dp(20)))
-
-        setOnClickListener {
-            performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
-            select(index)
+        when {
+            !candidateSurfaceActive -> candidateStrip.clear()
+            state.sentenceCandidates.isNotEmpty() -> candidateStrip.render(state.sentenceCandidates)
+            else -> Unit
         }
     }
 
@@ -474,15 +460,13 @@ class NomInputMethodService : InputMethodService(), KeyboardController.Listener 
         const val PREFS = "nom_settings"
         const val PREF_SPACE_SELECT = "space_select_first"
         const val PREF_NOM_MODE = "nom_mode_enabled"
-        const val QUERY_DEBOUNCE_MS = 12L
+        const val QUERY_DEBOUNCE_MS = 20L
+        const val MAX_CANDIDATES = 8
         val PUNCTUATION = setOf(",", ".", "?", "!")
 
         private val BACKGROUND = Color.rgb(10, 13, 18)
         private val SURFACE = Color.rgb(18, 24, 32)
         private val BORDER = Color.rgb(38, 50, 65)
-        private val TEXT = Color.rgb(245, 247, 250)
-        private val MUTED = Color.rgb(151, 163, 179)
         private val ACCENT = Color.rgb(111, 199, 255)
-        private val ACCENT_DARK = Color.rgb(35, 74, 100)
     }
 }
