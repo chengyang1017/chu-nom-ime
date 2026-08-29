@@ -182,7 +182,13 @@ class KeyboardController(
                 row.addView(key)
             }
             addGap(row)
-            row.addView(iconKey(R.drawable.ic_backspace, special) { listener.onDelete() })
+            row.addView(
+                iconKey(
+                    R.drawable.ic_backspace,
+                    special,
+                    repeatOnHold = true
+                ) { listener.onDelete() }
+            )
             page.addView(row)
             page.addView(bottomRow(unit, available, KeyboardMode.LETTERS))
             return page
@@ -291,30 +297,51 @@ class KeyboardController(
             installImmediatePress(click)
         }
 
-        private fun iconKey(icon: Int, width: Int, click: () -> Unit) = ImageButton(context).apply {
+        private fun iconKey(
+            icon: Int,
+            width: Int,
+            repeatOnHold: Boolean = false,
+            click: () -> Unit
+        ) = ImageButton(context).apply {
             setImageResource(icon)
             scaleType = ImageView.ScaleType.CENTER
             setPadding(dp(12), dp(12), dp(12), dp(12))
             contentDescription = null
             background = context.getDrawable(R.drawable.key_function_background)
             layoutParams = LayoutParams(width, keyHeight)
-            installImmediatePress(click)
+            installImmediatePress(click, repeatOnHold)
         }
 
-        private fun View.installImmediatePress(click: () -> Unit) {
+        private fun View.installImmediatePress(
+            click: () -> Unit,
+            repeatOnHold: Boolean = false
+        ) {
             isClickable = true
             isFocusable = true
+
+            lateinit var repeatAction: Runnable
+            repeatAction = Runnable {
+                if (!repeatOnHold || !isPressed) return@Runnable
+                click()
+                postDelayed(repeatAction, DELETE_REPEAT_INTERVAL_MS)
+            }
+
             setOnTouchListener { view, event ->
                 when (event.actionMasked) {
                     MotionEvent.ACTION_DOWN -> {
+                        view.removeCallbacks(repeatAction)
                         view.isPressed = true
                         click()
+                        if (repeatOnHold) {
+                            view.postDelayed(repeatAction, DELETE_REPEAT_START_DELAY_MS)
+                        }
                         true
                     }
 
                     MotionEvent.ACTION_UP,
                     MotionEvent.ACTION_CANCEL -> {
                         view.isPressed = false
+                        view.removeCallbacks(repeatAction)
                         true
                     }
 
@@ -330,6 +357,8 @@ class KeyboardController(
     }
 
     companion object {
+        private const val DELETE_REPEAT_START_DELAY_MS = 320L
+        private const val DELETE_REPEAT_INTERVAL_MS = 60L
         private val BACKGROUND = Color.rgb(10, 13, 18)
         private val TEXT = Color.rgb(245, 247, 250)
         private val MUTED = Color.rgb(151, 163, 179)
