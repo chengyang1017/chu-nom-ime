@@ -52,7 +52,7 @@ class SettingsActivity : AppCompatActivity() {
 
         val content = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(18), dp(10), dp(18), dp(32))
+            setPadding(dp(18), dp(6), dp(18), dp(26))
         }
         content.addView(TextView(this).apply {
             text = "Bàn phím chữ Nôm"
@@ -63,21 +63,21 @@ class SettingsActivity : AppCompatActivity() {
             text = getString(R.string.settings_description)
             textSize = 14f
             setTextColor(MUTED)
-            setPadding(0, dp(4), 0, dp(20))
+            setPadding(0, dp(4), 0, dp(16))
         })
 
         content.addView(buildSetupCard())
-        content.addView(space(dp(14)))
+        content.addView(space(dp(12)))
         content.addView(buildTypingCard())
 
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0) {
-            content.addView(space(dp(14)))
+            content.addView(space(dp(12)))
             content.addView(buildStudioCard())
         }
 
-        content.addView(space(dp(14)))
+        content.addView(space(dp(12)))
         content.addView(buildDictionaryCard(metadata, provider))
-        content.addView(space(dp(18)))
+        content.addView(space(dp(16)))
         content.addView(TextView(this).apply {
             text = "Offline by design · Nôm data stays on your device"
             textSize = 12f
@@ -160,16 +160,19 @@ class SettingsActivity : AppCompatActivity() {
                 inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
                 setTextColor(TEXT)
                 setHintTextColor(MUTED)
+                hint = "Tap here and switch to the Nôm keyboard"
+                background = null
+                setPadding(dp(12), dp(9), dp(12), dp(9))
             }
             addView(TextInputLayout(this@SettingsActivity).apply {
-                hint = "Keyboard test field"
-                placeholderText = "Tap here and switch to the Nôm keyboard"
+                hintEnabled = false
                 boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
                 boxBackgroundColor = SURFACE_HIGH
                 boxStrokeColor = ACCENT
-                setDefaultHintTextColor(ColorStateList.valueOf(MUTED))
+                boxStrokeWidth = dp(1)
+                boxStrokeWidthFocused = dp(2)
                 setBoxCornerRadii(
-                    dp(16).toFloat(), dp(16).toFloat(), dp(16).toFloat(), dp(16).toFloat()
+                    dp(14).toFloat(), dp(14).toFloat(), dp(14).toFloat(), dp(14).toFloat()
                 )
                 addView(testInput)
             }, LinearLayout.LayoutParams(-1, -2).apply { setMargins(0, dp(12), 0, 0) })
@@ -318,7 +321,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun surfaceCard() = MaterialCardView(this).apply {
         setCardBackgroundColor(SURFACE)
-        radius = dp(20).toFloat()
+        radius = dp(18).toFloat()
         strokeColor = BORDER
         strokeWidth = dp(1)
         cardElevation = 0f
