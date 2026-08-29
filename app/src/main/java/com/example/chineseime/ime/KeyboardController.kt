@@ -116,6 +116,7 @@ class KeyboardController(
         private val keyHeight = dp(50)
         private val basePageHeight = dp(220)
         private val nineKeyFilterWidth = dp(68)
+        private val nineKeyActionWidth = dp(58)
         private val pageHost = FrameLayout(context)
         private var pagesCreated = false
         private var cachedMeasuredWidth = 0
@@ -288,7 +289,12 @@ class KeyboardController(
         private fun buildNineKeyPage(unit: Int, available: Int): View {
             val page = page()
             val mainHeight = keyHeight * 3 + verticalGap * 3
-            val gridAvailable = (available - nineKeyFilterWidth - horizontalGap).coerceAtLeast(dp(180))
+            val gridAvailable = (
+                available -
+                    nineKeyFilterWidth -
+                    nineKeyActionWidth -
+                    horizontalGap * 2
+                ).coerceAtLeast(dp(180))
             val keyWidth = ((gridAvailable - horizontalGap * 2) / 3f).roundToInt()
 
             val main = LinearLayout(context).apply {
@@ -305,7 +311,7 @@ class KeyboardController(
                 orientation = VERTICAL
                 gravity = Gravity.TOP
             }
-            val symbolHeight = ((mainHeight - verticalGap * 3) / 4f).roundToInt()
+            val sideKeyHeight = ((mainHeight - verticalGap * 3) / 4f).roundToInt()
             listOf(",", ".", "?", "!").forEachIndexed { index, symbol ->
                 val key = textKey(symbol, nineKeyFilterWidth, function = true) {
                     resetNineKeyCycle()
@@ -313,7 +319,7 @@ class KeyboardController(
                 }
                 key.layoutParams = LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
-                    symbolHeight
+                    sideKeyHeight
                 ).apply {
                     if (index < 3) bottomMargin = verticalGap
                 }
@@ -343,7 +349,7 @@ class KeyboardController(
 
             val grid = LinearLayout(context).apply {
                 orientation = VERTICAL
-                layoutParams = LinearLayout.LayoutParams(0, mainHeight, 1f)
+                layoutParams = LinearLayout.LayoutParams(gridAvailable, mainHeight)
             }
             val rows = listOf(
                 listOf('1' to ".,?!", '2' to "ABC", '3' to "DEF"),
@@ -368,10 +374,107 @@ class KeyboardController(
                 grid.addView(row)
             }
             main.addView(grid)
+            main.addView(Space(context), LinearLayout.LayoutParams(horizontalGap, 1))
+            main.addView(nineKeyActionColumn(sideKeyHeight))
 
             page.addView(main)
-            page.addView(bottomRow(unit, available, KeyboardMode.NINE_KEY))
+            page.addView(nineKeyBottomRow(unit, available))
             return page
+        }
+
+        private fun nineKeyActionColumn(sideKeyHeight: Int): View {
+            val column = LinearLayout(context).apply {
+                orientation = VERTICAL
+                gravity = Gravity.TOP
+                layoutParams = LinearLayout.LayoutParams(nineKeyActionWidth, LayoutParams.MATCH_PARENT)
+            }
+
+            val delete = iconKey(
+                R.drawable.ic_backspace,
+                nineKeyActionWidth,
+                repeatOnHold = true
+            ) {
+                resetNineKeyCycle()
+                listener.onDelete()
+            }
+            delete.layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                sideKeyHeight
+            ).apply {
+                bottomMargin = verticalGap
+            }
+            column.addView(delete)
+
+            val enter = iconKey(enterIcon(), nineKeyActionWidth) {
+                resetNineKeyCycle()
+                listener.onEnter()
+            }
+            enter.layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                sideKeyHeight
+            ).apply {
+                bottomMargin = verticalGap
+            }
+            enterKeys += enter
+            column.addView(enter)
+
+            val symbols = textKey("符", nineKeyActionWidth, function = true) {
+                resetNineKeyCycle()
+                listener.onMode(KeyboardMode.SYMBOLS)
+            }
+            symbols.layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                sideKeyHeight
+            ).apply {
+                bottomMargin = verticalGap
+            }
+            column.addView(symbols)
+
+            val shift = iconKey(R.drawable.ic_shift, nineKeyActionWidth) {
+                resetNineKeyCycle()
+                listener.onShift()
+            }
+            shift.layoutParams = LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                sideKeyHeight
+            )
+            column.addView(shift)
+
+            return column
+        }
+
+        private fun nineKeyBottomRow(unit: Int, available: Int): View {
+            val small = (unit * 1.45f).roundToInt()
+            val spaceWidth = (available - small * 3 - horizontalGap * 3)
+                .coerceAtLeast(unit * 3)
+            val content = small * 3 + spaceWidth + horizontalGap * 3
+            val row = newRow(((available - content) / 2).coerceAtLeast(0), bottom = false)
+
+            row.addView(textKey("123", small, function = true) {
+                resetNineKeyCycle()
+                listener.onMode(KeyboardMode.NUMBERS)
+            })
+            addGap(row)
+
+            row.addView(textKey("ABC", small, function = true) {
+                resetNineKeyCycle()
+                listener.onMode(KeyboardMode.LETTERS)
+            })
+            addGap(row)
+
+            val language = textKey("", small, function = true) {
+                resetNineKeyCycle()
+                listener.onLanguage()
+            }
+            languageKeys += language
+            row.addView(language)
+            addGap(row)
+
+            row.addView(textKey("", spaceWidth) {
+                resetNineKeyCycle()
+                listener.onSpace()
+            })
+            return row
         }
 
         private fun buildGridPage(
