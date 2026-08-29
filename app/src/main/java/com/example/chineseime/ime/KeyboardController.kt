@@ -29,6 +29,7 @@ class KeyboardController(
     interface Listener {
         fun onLetter(value: Char)
         fun onNineKeyDigit(value: Char)
+        fun onNineKeyTone()
         fun onReplaceLastLetter(value: Char)
         fun onReplaceCommittedSymbol(value: String)
         fun onDelete()
@@ -50,6 +51,7 @@ class KeyboardController(
     var shifted = false
         private set
     private var nomMode = true
+    private var nineKeyTone = T9Tone.AUTO
     var enterAction = EditorInfo.IME_ACTION_NONE
         private set
     private var panel: KeyboardPanel? = null
@@ -91,6 +93,11 @@ class KeyboardController(
         panel?.updateDynamicKeys()
     }
 
+    fun setNineKeyTone(value: T9Tone) {
+        nineKeyTone = value
+        panel?.updateDynamicKeys()
+    }
+
     fun setNineKeyAccessory(view: View) {
         nineKeyAccessory = view
         panel?.attachNineKeyAccessory(view)
@@ -129,6 +136,7 @@ class KeyboardController(
         private val letterKeys = mutableListOf<Pair<Char, AppCompatTextView>>()
         private val languageKeys = mutableListOf<AppCompatTextView>()
         private val enterKeys = mutableListOf<ImageButton>()
+        private val nineKeyToneKeys = mutableListOf<AppCompatTextView>()
 
         private var lastNineKeyDigit: Char? = null
         private var lastNineKeyIndex = 0
@@ -221,6 +229,10 @@ class KeyboardController(
                 key.setTextColor(if (nomMode) ACCENT else MUTED)
             }
             enterKeys.forEach { it.setImageResource(enterIcon()) }
+            nineKeyToneKeys.forEach { key ->
+                key.text = nineKeyTone.label
+                key.setTextColor(if (nineKeyTone == T9Tone.AUTO) MUTED else ACCENT)
+            }
         }
 
         fun attachNineKeyAccessory(view: View) {
@@ -430,15 +442,17 @@ class KeyboardController(
             }
             column.addView(symbols)
 
-            val shift = iconKey(R.drawable.ic_shift, nineKeyActionWidth) {
+            val tone = textKey(nineKeyTone.label, nineKeyActionWidth, function = true) {
                 resetNineKeyCycle()
-                listener.onShift()
+                listener.onNineKeyTone()
             }
-            shift.layoutParams = LinearLayout.LayoutParams(
+            tone.setTextColor(if (nineKeyTone == T9Tone.AUTO) MUTED else ACCENT)
+            tone.layoutParams = LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 sideKeyHeight
             )
-            column.addView(shift)
+            nineKeyToneKeys += tone
+            column.addView(tone)
 
             return column
         }
