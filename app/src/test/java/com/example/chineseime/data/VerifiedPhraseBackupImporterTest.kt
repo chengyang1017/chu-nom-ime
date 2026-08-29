@@ -1,7 +1,9 @@
 package com.example.chineseime.data
 
 import com.example.chineseime.data.corpus.VerifiedPhraseBackupImporter
-import com.example.chineseime.data.corpus.VerifiedPhraseCorpusCodec
+import com.example.chineseime.data.corpus.VerifiedPhraseCorpus
+import com.example.chineseime.data.corpus.VerifiedPhraseCorpusEntry
+import com.example.chineseime.data.corpus.VerifiedPhraseCorpusToken
 import com.example.chineseime.data.model.NomCandidate
 import com.example.chineseime.data.model.VerifiedNomPhrase
 import com.example.chineseime.data.model.VerifiedNomToken
@@ -41,9 +43,9 @@ class VerifiedPhraseBackupImporterTest {
 
         val backupToi = phraseFrom(currentToi, sourceEntryId = 9_001L, example = "old example")
         val backupYeu = phraseFrom(currentYeu, sourceEntryId = 9_002L, example = "old example")
-        val json = VerifiedPhraseCorpusCodec.encode(listOf(backupToi, backupYeu), revision = 42L)
+        val corpus = corpusOf(revision = 42L, backupToi, backupYeu)
 
-        val plan = importer.plan(json)
+        val plan = importer.plan(corpus)
         assertEquals(2, plan.totalCount)
         assertEquals(1, plan.newCount)
         assertEquals(1, plan.duplicateCount)
@@ -84,10 +86,10 @@ class VerifiedPhraseBackupImporterTest {
                 )
             )
         )
-        val json = VerifiedPhraseCorpusCodec.encode(listOf(invalid), revision = 43L)
+        val corpus = corpusOf(revision = 43L, invalid)
 
         try {
-            importer.plan(json)
+            importer.plan(corpus)
             fail("Expected invalid backup evidence to be rejected")
         } catch (_: IllegalArgumentException) {
             // Expected: validation happens before apply() can write anything.
@@ -95,6 +97,29 @@ class VerifiedPhraseBackupImporterTest {
 
         assertTrue(repository.saved.isEmpty())
     }
+
+    private fun corpusOf(
+        revision: Long,
+        vararg phrases: VerifiedNomPhrase
+    ): VerifiedPhraseCorpus = VerifiedPhraseCorpus(
+        schemaVersion = 1,
+        revision = revision,
+        phrases = phrases.map { phrase ->
+            VerifiedPhraseCorpusEntry(
+                phraseRaw = phrase.phraseRaw,
+                tokens = phrase.tokens.map { token ->
+                    VerifiedPhraseCorpusToken(
+                        inputToken = token.inputToken,
+                        readingRaw = token.readingRaw,
+                        nomRaw = token.nomRaw,
+                        exampleRaw = token.exampleRaw,
+                        noteRaw = token.noteRaw,
+                        sourceRow = token.sourceRow
+                    )
+                }
+            )
+        }
+    )
 
     private fun phraseFrom(
         candidate: NomCandidate,

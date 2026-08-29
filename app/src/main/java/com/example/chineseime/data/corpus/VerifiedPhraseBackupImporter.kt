@@ -22,8 +22,10 @@ data class VerifiedPhraseImportResult(
 class VerifiedPhraseBackupImporter(
     private val repository: NomRepository
 ) {
-    fun plan(text: String): VerifiedPhraseImportPlan {
-        val corpus = VerifiedPhraseCorpusCodec.decode(text)
+    fun plan(text: String): VerifiedPhraseImportPlan =
+        plan(VerifiedPhraseCorpusCodec.decode(text))
+
+    fun plan(corpus: VerifiedPhraseCorpus): VerifiedPhraseImportPlan {
         val validated = corpus.phrases.map { entry ->
             val phraseTokens = entry.phraseRaw
                 .trim()
