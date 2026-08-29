@@ -36,6 +36,16 @@ class SentenceCompositionState(
         changed()
     }
 
+    fun replaceCurrentToken(value: String) {
+        val separator = rawSentence.lastIndexOf(' ')
+        rawSentence = if (separator >= 0) {
+            rawSentence.substring(0, separator + 1) + value
+        } else {
+            value
+        }
+        changed()
+    }
+
     fun deleteCodePoint() {
         if (rawSentence.isEmpty()) return
         val count = rawSentence.codePointCount(0, rawSentence.length)
