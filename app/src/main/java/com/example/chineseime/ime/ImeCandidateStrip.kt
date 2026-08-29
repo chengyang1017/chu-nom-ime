@@ -15,6 +15,7 @@ internal class ImeCandidateStrip(
     private val context: Context,
     private val host: LinearLayout,
     typeface: Typeface,
+    private val showReading: () -> Boolean,
     private val onSelect: (Int) -> Unit
 ) {
     private data class Slot(
@@ -32,8 +33,15 @@ internal class ImeCandidateStrip(
 
     fun render(values: List<NomSentenceCandidate>) {
         val visible = values.take(MAX_CANDIDATES)
-        val nextSignature = visible.joinToString(SIGNATURE_SEPARATOR) {
-            it.nomText + VALUE_SEPARATOR + it.restoredVietnamese
+        val readingVisible = showReading()
+        val nextSignature = buildString {
+            append(if (readingVisible) '1' else '0')
+            visible.forEach {
+                append(SIGNATURE_SEPARATOR)
+                append(it.nomText)
+                append(VALUE_SEPARATOR)
+                append(it.restoredVietnamese)
+            }
         }
         if (nextSignature == signature) return
         signature = nextSignature
@@ -44,10 +52,12 @@ internal class ImeCandidateStrip(
                 slot.root.visibility = View.GONE
                 return@forEachIndexed
             }
+
             if (slot.nom.text.toString() != candidate.nomText) slot.nom.text = candidate.nomText
             if (slot.reading.text.toString() != candidate.restoredVietnamese) {
                 slot.reading.text = candidate.restoredVietnamese
             }
+            slot.reading.visibility = if (readingVisible) View.VISIBLE else View.GONE
             slot.root.visibility = View.VISIBLE
         }
     }
@@ -61,34 +71,35 @@ internal class ImeCandidateStrip(
     private fun createSlot(index: Int, typeface: Typeface): Slot {
         val nom = TextView(context).apply {
             this.typeface = typeface
-            textSize = 25f
+            textSize = 27f
             setTextColor(TEXT)
             gravity = Gravity.CENTER
             maxLines = 1
             includeFontPadding = true
         }
         val reading = TextView(context).apply {
-            textSize = 11.5f
-            setTextColor(if (index == 0) ACCENT else MUTED)
+            textSize = 10.5f
+            setTextColor(MUTED)
             gravity = Gravity.CENTER
             maxLines = 1
+            visibility = View.GONE
         }
         val root = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            setPadding(dp(14), dp(6), dp(14), dp(6))
-            minimumWidth = dp(104)
-            minimumHeight = dp(66)
+            setPadding(dp(10), dp(2), dp(10), dp(2))
+            minimumWidth = dp(68)
+            minimumHeight = dp(54)
             background = roundedBackground(
-                color = if (index == 0) ACCENT_DARK else SURFACE,
-                stroke = if (index == 0) ACCENT else BORDER
+                color = if (index == 0) SURFACE_HIGH else Color.TRANSPARENT,
+                stroke = if (index == 0) BORDER else Color.TRANSPARENT
             )
-            layoutParams = LinearLayout.LayoutParams(-2, dp(66)).apply {
-                rightMargin = dp(7)
+            layoutParams = LinearLayout.LayoutParams(-2, dp(54)).apply {
+                rightMargin = dp(2)
             }
             visibility = View.GONE
-            addView(nom, LinearLayout.LayoutParams(-2, dp(38)))
-            addView(reading, LinearLayout.LayoutParams(-2, dp(20)))
+            addView(nom, LinearLayout.LayoutParams(-2, dp(34)))
+            addView(reading, LinearLayout.LayoutParams(-2, dp(16)))
             setOnClickListener {
                 performHapticFeedback(HapticFeedbackConstants.KEYBOARD_TAP)
                 onSelect(index)
@@ -100,22 +111,20 @@ internal class ImeCandidateStrip(
     private fun roundedBackground(color: Int, stroke: Int): GradientDrawable =
         GradientDrawable().apply {
             shape = GradientDrawable.RECTANGLE
-            cornerRadius = dp(15).toFloat()
+            cornerRadius = dp(10).toFloat()
             setColor(color)
-            setStroke(dp(1), stroke)
+            if (stroke != Color.TRANSPARENT) setStroke(dp(1), stroke)
         }
 
     private fun dp(value: Int) = (value * context.resources.displayMetrics.density).toInt()
 
     private companion object {
         const val MAX_CANDIDATES = 8
-        const val SIGNATURE_SEPARATOR = "\u0001"
-        const val VALUE_SEPARATOR = "\u0000"
-        val SURFACE = Color.rgb(18, 24, 32)
+        const val SIGNATURE_SEPARATOR = '\u0001'
+        const val VALUE_SEPARATOR = '\u0000'
+        val SURFACE_HIGH = Color.rgb(24, 33, 43)
         val BORDER = Color.rgb(38, 50, 65)
         val TEXT = Color.rgb(245, 247, 250)
         val MUTED = Color.rgb(151, 163, 179)
-        val ACCENT = Color.rgb(111, 199, 255)
-        val ACCENT_DARK = Color.rgb(35, 74, 100)
     }
 }
