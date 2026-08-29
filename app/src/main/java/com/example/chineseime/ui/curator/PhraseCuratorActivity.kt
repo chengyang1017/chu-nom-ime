@@ -191,7 +191,7 @@ class PhraseCuratorActivity : AppCompatActivity() {
     private fun normalizeStudioViews(view: View) {
         when (view) {
             is TextInputLayout -> {
-                view.hintEnabled = false
+                view.setHintEnabled(false)
                 view.hint = null
                 view.placeholderText = null
                 view.boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE

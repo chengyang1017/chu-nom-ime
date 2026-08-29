@@ -165,7 +165,7 @@ class SettingsActivity : AppCompatActivity() {
                 setPadding(dp(12), dp(9), dp(12), dp(9))
             }
             addView(TextInputLayout(this@SettingsActivity).apply {
-                hintEnabled = false
+                setHintEnabled(false)
                 boxBackgroundMode = TextInputLayout.BOX_BACKGROUND_OUTLINE
                 boxBackgroundColor = SURFACE_HIGH
                 boxStrokeColor = ACCENT
