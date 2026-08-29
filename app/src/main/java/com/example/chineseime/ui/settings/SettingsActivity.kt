@@ -190,18 +190,75 @@ class SettingsActivity : AppCompatActivity() {
             addView(title("Dictionary and Nôm fonts"))
             addView(body("Hội Bảo tồn Di sản chữ Nôm · ${metadata.getInt("extractedRowCount")} source records"))
 
+            addView(secondaryButton("Nôm font · ${provider.currentChoice().label}") {
+                showFontPicker(provider)
+            }, LinearLayout.LayoutParams(-1, dp(48)).apply { setMargins(0, dp(14), 0, 0) })
             addView(secondaryButton("View data details") { showDataDetails(metadata) },
-                LinearLayout.LayoutParams(-1, dp(48)).apply { setMargins(0, dp(14), 0, 0) })
+                LinearLayout.LayoutParams(-1, dp(48)).apply { setMargins(0, dp(8), 0, 0) })
             addView(secondaryButton("Run glyph diagnostics") { showGlyphDiagnostics(provider) },
                 LinearLayout.LayoutParams(-1, dp(48)).apply { setMargins(0, dp(8), 0, 0) })
 
             addView(TextView(this@SettingsActivity).apply {
-                text = "Minh Nguyên · Plangothic P1 · SIL Open Font License 1.1"
+                text = "Installed: ${provider.availableChoices().joinToString(" · ") { it.label }}"
                 textSize = 12f
                 setTextColor(MUTED)
                 setPadding(0, dp(12), 0, 0)
             })
         })
+    }
+
+    private fun showFontPicker(provider: NomTypefaceProvider) {
+        val current = provider.currentChoice().id
+        val list = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(10), dp(6), dp(10), dp(10))
+        }
+
+        provider.availableChoices().forEach { choice ->
+            val selected = choice.id == current
+            list.addView(MaterialCardView(this).apply {
+                setCardBackgroundColor(if (selected) ACCENT_DARK else SURFACE_HIGH)
+                radius = dp(16).toFloat()
+                strokeColor = if (selected) ACCENT else BORDER
+                strokeWidth = dp(if (selected) 2 else 1)
+                cardElevation = 0f
+                addView(LinearLayout(this@SettingsActivity).apply {
+                    orientation = LinearLayout.VERTICAL
+                    setPadding(dp(14), dp(12), dp(14), dp(12))
+                    addView(TextView(this@SettingsActivity).apply {
+                        text = if (selected) "${choice.label}  ✓" else choice.label
+                        textSize = 16f
+                        setTextColor(TEXT)
+                    })
+                    addView(TextView(this@SettingsActivity).apply {
+                        text = choice.description
+                        textSize = 11.5f
+                        setTextColor(MUTED)
+                        setPadding(0, dp(2), 0, 0)
+                    })
+                    addView(TextView(this@SettingsActivity).apply {
+                        text = "碎 㤇 㛪 𤻒"
+                        typeface = provider.typefaceFor(choice.id)
+                        textSize = 30f
+                        includeFontPadding = true
+                        setTextColor(TEXT)
+                        setPadding(0, dp(7), 0, 0)
+                    })
+                })
+                setOnClickListener {
+                    if (provider.selectFont(choice.id)) recreate()
+                }
+            }, LinearLayout.LayoutParams(-1, -2).apply {
+                setMargins(0, 0, 0, dp(8))
+            })
+        }
+
+        MaterialAlertDialogBuilder(this)
+            .setTitle("Choose Nôm font")
+            .setMessage("The selected font is used first. Missing glyphs still fall back automatically.")
+            .setView(ScrollView(this).apply { addView(list) })
+            .setNegativeButton("Cancel", null)
+            .show()
     }
 
     private fun showDataDetails(metadata: JSONObject) {
